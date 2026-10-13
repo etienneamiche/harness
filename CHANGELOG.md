@@ -2,6 +2,16 @@
 
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versions : [semver](https://semver.org/lang/fr/).
 
+## [0.1.1] - 2026-10-14
+
+### Corrigé
+- Le premier commit d'un projet était refusé par le hook `pre-commit` : gitleaks prenait les empreintes du manifeste (`secret-guard.ps1`, `secret-prompt.ps1`) pour des clés d'API. Ajout d'un `.gitleaks.toml` qui n'exclut que `.harness/manifest.json`.
+- Fins de ligne : ajout d'un `.gitattributes` géré par le harness, prioritaire sur `core.autocrlf=true` (réglage par défaut de Git pour Windows).
+
+### Ajouté
+- `tools/test.ps1` commite chaque projet généré : le hook `pre-commit` est désormais testé sur les fichiers du harness eux-mêmes.
+- Autotest : le manifeste passe le `pre-commit`.
+
 ## [0.1.0] - 2026-10-14
 
 Première version : le cœur du harness, sans module de techno.

@@ -41,6 +41,13 @@ foreach ($k in $Kind) {
 
     pwsh -NoProfile -File (Join-Path $dest '.harness' 'tools' 'doctor.ps1') -Deep -Offline
     if ($LASTEXITCODE -ne 0) { $failed++ }
+
+    # Un projet tout juste généré doit se commiter : le hook pre-commit (gitleaks) ne doit
+    # rien trouver dans les fichiers du harness eux-mêmes.
+    git -C $dest add -A
+    git -C $dest commit -q -m 'chore: harness (#0)' 2>&1 | Out-Host
+    if ($LASTEXITCODE -ne 0) { Write-Host 'le premier commit du projet généré est refusé' -ForegroundColor Red; $failed++ }
+    else { Write-Host 'premier commit : OK (pre-commit passé)' }
 }
 
 if (-not $Keep) { Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue }

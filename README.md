@@ -27,6 +27,8 @@ copier update --trust           # dans le dossier du projet
 CLAUDE.md                    @AGENTS.md
 AGENTS.md                    au projet (jamais écrasé), importe .harness/agents/core.md
 ARCHITECTURE.md              au projet (jamais écrasé)
+.gitattributes               fins de ligne (prioritaire sur core.autocrlf)
+.gitleaks.toml               règles gitleaks par défaut + exclusion du manifeste
 .claude/settings.json        modèle, permissions, hooks, plugins, claudeMdExcludes
 .claude/agents/              8 subagents à modèle imposé
 .harness/

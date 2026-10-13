@@ -217,6 +217,7 @@ Describe 'pre-commit (gitleaks)' {
         New-Item -ItemType Directory -Force (Join-Path $script:Repo '.harness') | Out-Null
         Copy-Item (Join-Path $script:Root '.harness' 'harness.json') (Join-Path $script:Repo '.harness')
         Copy-Item (Join-Path $script:Root '.harness' 'githooks') (Join-Path $script:Repo '.harness') -Recurse
+        Copy-Item (Join-Path $script:Root '.gitleaks.toml') $script:Repo
         git -C $script:Repo init -q -b main
         function Test-PreCommit {
             Push-Location $script:Repo
@@ -236,6 +237,11 @@ Describe 'pre-commit (gitleaks)' {
         Set-Content (Join-Path $script:Repo '.env') 'DEBUG=true'
         git -C $script:Repo add -f .env
         Test-PreCommit | Should -Not -Be 0
+    }
+    It 'accepte le manifeste du harness (empreintes, pas des secrets)' {
+        Copy-Item (Join-Path $script:Root '.harness' 'manifest.json') (Join-Path $script:Repo '.harness')
+        git -C $script:Repo add .harness/manifest.json
+        Test-PreCommit | Should -Be 0
     }
     It 'accepte un fichier sain' {
         Set-Content (Join-Path $script:Repo 'app.ts') 'export const answer = 42;'
