@@ -1,0 +1,47 @@
+# Template Copier du harness. Voir README.md.
+_min_copier_version: "9.4"
+_subdirectory: template
+_answers_file: .copier-answers.harness.yml
+_templates_suffix: .jinja
+
+# Fichiers du projet : créés une fois, jamais écrasés par une mise à jour.
+_skip_if_exists:
+  - AGENTS.md
+  - ARCHITECTURE.md
+
+# Finalisation : hook Git, .gitignore, plugins, manifeste (nécessite --trust).
+_tasks:
+  - ["pwsh", "-NoProfile", "-NonInteractive", "-File", ".harness/tools/post-install.ps1"]
+
+project_name:
+  type: str
+  help: Nom du projet (en général, le nom du dépôt)
+  default: "{{ _copier_conf.dst_path | basename }}"
+
+description:
+  type: str
+  help: Description en une phrase
+  default: ""
+
+kind:
+  type: str
+  help: Type de dépôt
+  default: app
+  choices:
+    "Application (gitflow)": app
+    "Jeu (gitflow)": game
+    "Bac à sable de test (gitflow)": sandbox
+    "Racine services": root
+    "Idées de projets": ideas
+    "Bibliothèques communes": libs
+    "Template": template
+    "Infrastructure (homelab)": infra
+
+hook_profile:
+  type: str
+  help: Sévérité des hooks
+  default: standard
+  choices:
+    - minimal
+    - standard
+    - strict
