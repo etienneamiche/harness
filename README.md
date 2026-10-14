@@ -12,7 +12,18 @@ copier copy --trust gh:etienneamiche/harness <dossier-du-projet>
 
 `--trust` est nécessaire : l'installation lance `.harness/tools/post-install.ps1`, qui active le hook Git `pre-commit`, complète `.gitignore`, installe les plugins Claude Code du projet et écrit le manifeste.
 
-Questions posées : nom, description, **type de dépôt** (`app`, `game`, `sandbox`, `root`, `ideas`, `libs`, `template`, `infra`) et **profil des hooks** (`minimal`, `standard`, `strict`).
+Questions posées : nom, description, **type de dépôt** (`app`, `game`, `sandbox`, `root`, `ideas`, `libs`, `template`, `infra`), **modules** et **profil des hooks** (`minimal`, `standard`, `strict`).
+
+## Modules
+
+| Module | Pour | Apporte |
+|---|---|---|
+| `react` | Un front | Conventions React, config Biome, vérifications Biome + `tsc`, plugin `typescript-lsp` |
+| `dotnet` | Un backend .NET | Conventions .NET, `analyzers.globalconfig`, vérifications `dotnet format` + build + numéros de migration, subagent `db-ops`, skills `dotnet-webapi` et `optimizing-ef-core-queries`, plugin `csharp-lsp` |
+| `python` | Un petit module Python | Conventions Python, vérifications ruff + pyright, plugin `pyright-lsp` |
+| `game` | Un jeu multijoueur (avec `react` et `dotnet`) | Conventions jeu : serveur qui fait autorité, règles pures, salles, sauvegardes |
+
+Un module vit dans `template/.harness/modules/<nom>/` : `conventions.md` (importé par `core.md`), `module.json` (vérifications de fin de tour `stopChecks`, blocs structurels `structural`), et ses fichiers de configuration. Ajouter une techno = ajouter un module, sans toucher au cœur.
 
 ## Mettre à jour un projet
 

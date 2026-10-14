@@ -46,6 +46,7 @@ modules:
     - react
     - dotnet
     - python
+    - game
 
 hook_profile:
   type: str

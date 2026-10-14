@@ -2,6 +2,25 @@
 
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versions : [semver](https://semver.org/lang/fr/).
 
+## [0.2.0] - 2026-10-14
+
+Les conventions de code (phase 3 de la roadmap) et le système de modules.
+
+### Ajouté
+- **Système de modules** : question `modules` (`react`, `dotnet`, `python`, `game`). Chaque module installe `.harness/modules/<nom>/` (conventions, vérifications de fin de tour, blocs structurels), importé automatiquement par `core.md`.
+- **Conventions communes** (`.harness/agents/conventions.md`) : langues (code et Git en anglais, docs et suivi en français), i18n dès le départ, structure, branches, PR, Conventional Commits, ADR, tests, logs et OpenTelemetry, Problem Details, API tierces via le backend, accessibilité.
+- **Module `react`** : Vite, React 19 + React Compiler, TanStack Router et Query, Orval (`*.queries.ts`), react-hook-form + zod, shadcn, react-i18next, options `api` / `auth` / `google` / `realtime`, impersonation, Biome, Vitest + Testing Library + MSW, Playwright + axe.
+- **Module `dotnet`** : Controller → Service → Dal / Clients en projets séparés, database-first + migrations SQL DbUp, immuabilité, clients Refit + résilience standard + HybridCache, FluentValidation, `ICurrentUser`, permissions, impersonation, `analyzers.globalconfig`, xUnit v3 + Shouldly + NSubstitute.
+- **Module `python`** : petits modules FastAPI, traitements longs (file en processus, état SQLite, progression SSE), exposition `internal`, ruff + pyright.
+- **Module `game`** : serveur qui fait autorité, règles pures, salles avec file par salle, reconnexion, sauvegardes de partie versionnées.
+- **Subagent `db-ops`** (Haiku), avec le module `dotnet` : migrations locales et scaffolding EF.
+- **Skills** adaptés de dotnet/skills (MIT), avec le module `dotnet` : `dotnet-webapi`, `optimizing-ef-core-queries`.
+- **Plugins LSP** selon les modules : `csharp-lsp`, `typescript-lsp`, `pyright-lsp`.
+
+### Modifié
+- `git-ops` : messages de commit en anglais.
+- `structural-watch` lit aussi les blocs structurels déclarés par les modules.
+
 ## [0.1.1] - 2026-10-14
 
 ### Corrigé
