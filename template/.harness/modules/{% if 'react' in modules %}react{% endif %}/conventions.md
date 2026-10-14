@@ -91,6 +91,11 @@ frontend/src/
 - **Les contrats (méthodes et messages du hub) sont générés depuis le C#** : jamais écrits à la main des deux côtés.
 - Les messages reçus alimentent un **store Zustand** ; les composants lisent ce store.
 
+## Utilisateur et impersonation (`auth: oidc`)
+
+- L'utilisateur courant et ses **permissions** viennent du backend (`GET /api/me`), pas d'une lecture du jeton dans le front. L'interface masque ce que l'utilisateur ne peut pas faire ; l'API le refuse de toute façon.
+- **« Naviguer en tant que… »** : visible seulement avec la permission `Users.Impersonate`. Le choix d'un utilisateur ajoute l'en-tête `X-Impersonate-User` à chaque appel d'API (dans le client généré, via son intercepteur), et un **bandeau permanent** indique « Vous naviguez en tant que X » avec un bouton pour revenir à soi.
+
 ## Erreurs
 
 - Une **error boundary par route** (`errorComponent` de TanStack Router), plus une à la racine.

@@ -50,7 +50,8 @@
   "claudeMdExcludes": ["**/services/CLAUDE.md", "**/services/AGENTS.md"],
 {%- endif %}
   "enabledPlugins": {
-    "ponytail@ponytail": true
+    "ponytail@ponytail": true{% if 'dotnet' in modules %},
+    "csharp-lsp@claude-plugins-official": true{% endif %}
   },
   "extraKnownMarketplaces": {
     "ponytail": { "source": { "source": "github", "repo": "DietrichGebert/ponytail" } }

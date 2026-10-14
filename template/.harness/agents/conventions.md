@@ -53,7 +53,7 @@ scripts/       launch.ps1, test.ps1, lint.ps1, build.ps1
 
 - **Tout code métier nouveau arrive avec ses tests**, dans la même PR. `auditor` le vérifie avant fusion.
 - **Unitaires** pour la logique métier.
-- **Intégration** contre de vraies dépendances : une vraie base Postgres via **Testcontainers**, jamais une base simulée.
+- **Intégration** contre de vraies dépendances : le **Postgres local** (Docker), recréé et migré à chaque lancement de `scripts/test.ps1`, jamais une base simulée.
 - **Composants** : leur comportement, vu par l'utilisateur (rôles, textes, interactions), jamais leur structure interne ni des instantanés.
 - **E2E (Playwright)** limités aux **parcours critiques**, 1 à 5 par app, avec un contrôle d'accessibilité **axe**.
 - **Couverture** : mesurée et affichée, **sans seuil bloquant**. Un test qui n'existe que pour le chiffre est pire que pas de test.
