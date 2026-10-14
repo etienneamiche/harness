@@ -15,7 +15,14 @@
         # `git -C x push` reste un `git push`. Le dossier visé sert à lire la branche courante.
         $gitDir = $ctx.Cwd
         if ($cmd -match '\bgit\s+-C\s+("(?<d>[^"]+)"|''(?<d>[^'']+)''|(?<d>\S+))') { $gitDir = [IO.Path]::GetFullPath($Matches['d'], $ctx.Cwd) }
-        $cmd = [regex]::Replace($cmd, '\bgit((\s+(-C|-c)\s+("[^"]*"|''[^'']*''|\S+))|(\s+--(git-dir|work-tree|namespace|exec-path|config-env)(=|\s+)\S+)|(\s+(--no-pager|-P|--bare|--no-replace-objects|--literal-pathspecs|--glob-pathspecs|--noglob-pathspecs|--icase-pathspecs|--no-optional-locks)))+', 'git')
+        # Un alias git défini en ligne (`git -c alias.p=push p`) masquerait la vraie sous-commande.
+        if ($cmd -match '\bgit\b[^;&|]*\s-c\s*["'']?alias\.') {
+            return @{ Decision = 'deny'; Reason = "pas d'alias git défini dans la commande (-c alias.…) : écrire la sous-commande en clair." }
+        }
+        # Toute option placée avant la sous-commande est retirée (celles qui prennent une valeur avec elle).
+        $cmd = [regex]::Replace($cmd, '\bgit((\s+(-C|-c|--git-dir|--work-tree|--namespace|--exec-path|--config-env|--super-prefix)(=|\s+)("[^"]*"|''[^'']*''|\S+))|(\s+--?[A-Za-z][\w-]*(=\S+)?))+', 'git')
+        # Même chose pour gh : -R / --repo peut se placer avant ou après le groupe (`gh pr -R x merge`).
+        $cmd = [regex]::Replace($cmd, '(?<=\bgh\b[^;&|\n]*)\s(-R|--repo)(=|\s+)("[^"]*"|''[^'']*''|\S+)', '')
         $agent = $ctx.AgentType
         $config = $ctx.Config
         $who = if ($agent) { "l'agent '$agent'" } else { 'la session principale' }
