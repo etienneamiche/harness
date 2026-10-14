@@ -11,6 +11,11 @@
         $cmd = Get-Value $ctx.ToolInput 'command' ''
         # merge-pr.ps1 ne contient ni « git » ni « gh » : il doit quand même passer par les règles.
         if ($cmd -notmatch '\b(git|gh)\b|merge-pr\.ps1') { return }
+        # Options globales de git (-C dossier, -c clé=valeur, --git-dir…) retirées avant l'analyse :
+        # `git -C x push` reste un `git push`. Le dossier visé sert à lire la branche courante.
+        $gitDir = $ctx.Cwd
+        if ($cmd -match '\bgit\s+-C\s+("(?<d>[^"]+)"|''(?<d>[^'']+)''|(?<d>\S+))') { $gitDir = [IO.Path]::GetFullPath($Matches['d'], $ctx.Cwd) }
+        $cmd = [regex]::Replace($cmd, '\bgit((\s+(-C|-c)\s+("[^"]*"|''[^'']*''|\S+))|(\s+--(git-dir|work-tree|namespace|exec-path|config-env)(=|\s+)\S+)|(\s+(--no-pager|-P|--bare|--no-replace-objects|--literal-pathspecs|--glob-pathspecs|--noglob-pathspecs|--icase-pathspecs|--no-optional-locks)))+', 'git')
         $agent = $ctx.AgentType
         $config = $ctx.Config
         $who = if ($agent) { "l'agent '$agent'" } else { 'la session principale' }
@@ -39,6 +44,19 @@
             }
         }
 
+        # 2 bis. Le marqueur de revue n'est écrit que par auditor : tout autre agent qui l'écrirait
+        # s'auto-approuverait (texte de la commande ou fichier passé par --body-file).
+        if ($agent -ne 'auditor' -and $cmd -match '\bgh\b') {
+            $text = $cmd
+            if ($cmd -match '\s(--body-file|-F)(=|\s+)("(?<f>[^"]+)"|''(?<f>[^'']+)''|(?<f>\S+))') {
+                $bodyFile = [IO.Path]::GetFullPath($Matches['f'], $ctx.Cwd)
+                if (Test-Path $bodyFile -PathType Leaf) { $text += "`n" + (Get-Content $bodyFile -Raw) }
+            }
+            if ($text -match '<!--\s*auditor:') {
+                return @{ Decision = 'deny'; Reason = "seul l'agent auditor écrit le marqueur de revue (<!-- auditor: … -->)." }
+            }
+        }
+
         # 3. Push vers une branche protégée.
         $protected = @(Get-Value $config 'protectedBranches' @())
         if ($protected -and $cmd -match 'git\s+push\b(?<args>[^;&|]*)') {
@@ -47,7 +65,7 @@
             $branch = if ($positional.Count -ge 2) {
                 (($positional[1] -split ':')[-1]) -replace '^\+', '' -replace '^refs/heads/', ''
             }
-            else { git -C $ctx.Cwd branch --show-current 2>$null }
+            else { git -C $gitDir branch --show-current 2>$null }
             if ($protected -contains $branch) {
                 return @{ Decision = 'deny'; Reason = "push direct sur '$branch' interdit : passer par une PR." }
             }
@@ -74,7 +92,7 @@
         # analyser de façon fiable (échappements, commandes enchaînées, --repo…) : la fusion passe par
         # .harness/tools/merge-pr.ps1, aux paramètres typés, qui vérifie la revue auditor et fusionne
         # le commit revu et lui seul (--match-head-commit). Ce script est réservé à git-ops (§2).
-        if ($cmd -match '\bgh\b[^;&|]*\bpr\s+merge\b') {
+        if ($cmd -match '\bgh(\s+(-R|--repo)(=|\s+)\S+|\s+--?[\w-]+)*\s+pr\s+merge\b') {
             return @{ Decision = 'deny'; Reason = "pas de 'gh pr merge' direct : fusionner avec pwsh -NoProfile -File .harness/tools/merge-pr.ps1 -Pr <n> -Subject `"type(scope): description (#n)`" (-Strategy merge pour une release ou un hotfix)." }
         }
     }

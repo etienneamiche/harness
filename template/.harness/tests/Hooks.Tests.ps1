@@ -120,6 +120,39 @@ Describe 'git-guard : fusion uniquement par merge-pr.ps1' {
     It 'laisse git-ops lancer merge-pr.ps1' {
         (Invoke-Hook -Data (Bash 'pwsh -NoProfile -File .harness/tools/merge-pr.ps1 -Pr 7 -Subject "feat: x (#7)"' 'git-ops')).Decision | Should -Be 'allow'
     }
+    It 'ne confond pas un texte « pr merge » dans un commentaire avec une fusion' {
+        (Invoke-Hook -Data (Bash 'gh issue comment 3 --body "voir la pr merge de demain"' 'git-ops')).Decision | Should -Be 'allow'
+    }
+}
+
+Describe 'git-guard : contournements connus' {
+    It 'voit un git push derrière les options globales de git (<cmd>)' -Skip:(-not $Gitflow) -ForEach @(
+        @{ cmd = 'git -C ../autre push origin main' }, @{ cmd = 'git -c core.hooksPath=/dev/null push origin develop' },
+        @{ cmd = 'git --no-pager --git-dir=.git push origin main' }
+    ) { (Invoke-Hook -Data (Bash $cmd 'git-ops')).Decision | Should -Be 'deny' }
+    It 'voit un commit derrière les options globales de git, hors git-ops' {
+        (Invoke-Hook -Data (Bash 'git -C . commit -m "feat: x (#1)"' 'dev')).Decision | Should -Be 'deny'
+        (Invoke-Hook -Data (Bash 'git -c user.name=x commit -m "feat: x (#1)"' 'dev')).Decision | Should -Be 'deny'
+    }
+    It 'réserve à l''utilisateur toute écriture par gh api (<cmd>)' -ForEach @(
+        @{ cmd = 'gh api --method=PUT repos/o/r/pulls/7/merge' }, @{ cmd = 'gh api -X PUT repos/o/r/pulls/7/merge' },
+        @{ cmd = 'gh api repos/o/r/issues/7/comments -f body=x' }, @{ cmd = "gh api graphql -f query='mutation { mergePullRequest(input:{}) { clientMutationId } }'" },
+        @{ cmd = 'gh api repos/o/r/pulls/7/reviews --input review.json' }
+    ) { (Invoke-Hook -Data (Bash $cmd 'git-ops')).Decision | Should -Be 'deny' }
+    It 'laisse lire par gh api' {
+        (Invoke-Hook -Data (Bash 'gh api repos/o/r/pulls/7 --jq .state' 'dev')).Decision | Should -Be 'allow'
+    }
+    It 'refuse le marqueur de revue écrit par un autre agent qu''auditor' {
+        $marker = '<!-- auditor: sha=abc1234 verdict=approve -->'
+        (Invoke-Hook -Data (Bash "gh pr comment 7 --body `"ok $marker`"" 'git-ops')).Decision | Should -Be 'deny'
+        (Invoke-Hook -Data (Bash "gh pr comment 7 --body `"ok $marker`"" 'auditor')).Decision | Should -Be 'allow'
+    }
+    It 'refuse le marqueur passé par --body-file hors auditor' {
+        $file = Join-Path ([IO.Path]::GetTempPath()) "review-$([guid]::NewGuid()).md"
+        Set-Content $file "Revue`n<!-- auditor: sha=abc1234 verdict=approve -->"
+        try { (Invoke-Hook -Data (Bash "gh pr comment 7 --body-file $file" 'git-ops')).Decision | Should -Be 'deny' }
+        finally { [IO.File]::Delete($file) }
+    }
 }
 
 Describe 'merge-pr.ps1' {
@@ -127,13 +160,14 @@ Describe 'merge-pr.ps1' {
         $script:MergeScript = Join-Path $script:Root '.harness' 'tools' 'merge-pr.ps1'
         $script:PrFile = Join-Path ([IO.Path]::GetTempPath()) "harness-pr-$([guid]::NewGuid()).json"
         $script:Head = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
-        function Set-Pr([object[]] $Comments, [int] $Number = 7, [string] $State = 'OPEN') {
-            @{ number = $Number; state = $State; headRefOid = $script:Head; comments = $Comments } | ConvertTo-Json -Depth 5 | Set-Content $script:PrFile
+        function Comment([string] $Body, [string] $Author = 'me') { @{ body = $Body; author = @{ login = $Author } } }
+        function Set-Pr([object[]] $Comments, [int] $Number = 7, [string] $State = 'OPEN', [string] $Url = 'https://github.com/me/app/pull/7') {
+            @{ number = $Number; state = $State; url = $Url; headRefOid = $script:Head; comments = $Comments } | ConvertTo-Json -Depth 6 | Set-Content $script:PrFile
         }
-        function Approve { Set-Pr @(@{ body = "Revue`n<!-- auditor: sha=$($script:Head) verdict=approve -->" }) }
-        # Lance le script en mode essai (aucune fusion réelle), avec la PR simulée.
+        function Approve { Set-Pr @(Comment "Revue`n<!-- auditor: sha=$($script:Head) verdict=approve -->") }
+        # Lance le script en mode essai (aucune fusion réelle), avec la PR et le compte GitHub simulés.
         function Invoke-MergePr([string[]] $ScriptArgs, [hashtable] $Env = @{ HARNESS_TEST_DRYRUN = '1' }) {
-            $vars = @{ HARNESS_TEST_PR_JSON = $script:PrFile } + $Env
+            $vars = @{ HARNESS_TEST_PR_JSON = $script:PrFile; HARNESS_TEST_GH_LOGIN = 'me' } + $Env
             $saved = @{}
             foreach ($k in $vars.Keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k); [Environment]::SetEnvironmentVariable($k, $vars[$k]) }
             try { $out = pwsh -NoProfile -NonInteractive -File $script:MergeScript @ScriptArgs 2>&1 | Out-String; $code = $LASTEXITCODE }
@@ -144,27 +178,42 @@ Describe 'merge-pr.ps1' {
     }
     AfterAll { [IO.File]::Delete($script:PrFile) }
 
-    It 'fusionne une PR approuvée sur son dernier commit, ce commit-là et lui seul' {
+    It 'fusionne une PR approuvée : ce commit-là, dans ce dépôt-là, branche supprimée' {
         Approve
         $r = Invoke-MergePr $script:Ok
         $r.Code | Should -Be 0
         $r.Output | Should -Match "--match-head-commit $($script:Head)"
+        $r.Output | Should -Match '--repo me/app'
         $r.Output | Should -Match '--squash'
+        $r.Output | Should -Match '--delete-branch'
     }
-    It 'refuse une PR sans revue' { Set-Pr @(@{ body = 'LGTM' }); (Invoke-MergePr $script:Ok).Code | Should -Be 1 }
+    It 'refuse une PR sans revue' { Set-Pr @(Comment 'LGTM'); (Invoke-MergePr $script:Ok).Code | Should -Be 1 }
+    It 'ignore un marqueur posé par un autre compte GitHub' {
+        Set-Pr @(Comment "<!-- auditor: sha=$($script:Head) verdict=approve -->" 'inconnu')
+        (Invoke-MergePr $script:Ok).Output | Should -Match "pas de revue auditor"
+    }
     It 'refuse une PR modifiée après la revue' {
-        Set-Pr @(@{ body = '<!-- auditor: sha=0000000aaaaaaa1111111bbbbbbb2222222ccccc verdict=approve -->' })
+        Set-Pr @(Comment '<!-- auditor: sha=0000000aaaaaaa1111111bbbbbbb2222222ccccc verdict=approve -->')
         (Invoke-MergePr $script:Ok).Output | Should -Match 'Relancer /audit-pr'
     }
     It 'refuse une PR dont la dernière revue demande des changements' {
-        Set-Pr @(@{ body = "<!-- auditor: sha=$($script:Head) verdict=approve -->" }, @{ body = "<!-- auditor: sha=$($script:Head) verdict=changes -->" })
+        Set-Pr @((Comment "<!-- auditor: sha=$($script:Head) verdict=approve -->"), (Comment "<!-- auditor: sha=$($script:Head) verdict=changes -->"))
         (Invoke-MergePr $script:Ok).Code | Should -Be 1
     }
+    It 'refuse une PR de homelab, quel que soit le dépôt courant' {
+        Set-Pr @(Comment "<!-- auditor: sha=$($script:Head) verdict=approve -->") -Url 'https://github.com/me/homelab/pull/7'
+        (Invoke-MergePr $script:Ok).Output | Should -Match 'homelab'
+    }
     It 'refuse si la PR lue n''est pas celle demandée' { Approve; (Invoke-MergePr @('-Pr', '8', '-Subject', 'feat(api): add export (#7)')).Code | Should -Be 1 }
-    It 'refuse une PR fermée' { Set-Pr @(@{ body = "<!-- auditor: sha=$($script:Head) verdict=approve -->" }) -State 'MERGED'; (Invoke-MergePr $script:Ok).Code | Should -Be 1 }
+    It 'refuse une PR fermée' { Set-Pr @(Comment "<!-- auditor: sha=$($script:Head) verdict=approve -->") -State 'MERGED'; (Invoke-MergePr $script:Ok).Code | Should -Be 1 }
     It 'exige -Subject en squash' { Approve; (Invoke-MergePr @('-Pr', '7')).Output | Should -Match 'Subject' }
     It 'exige un -Subject en Conventional Commits avec numéro d''issue' { Approve; (Invoke-MergePr @('-Pr', '7', '-Subject', 'Ajout export')).Code | Should -Be 1 }
-    It 'accepte -Strategy merge sans -Subject (release, hotfix)' { Approve; (Invoke-MergePr @('-Pr', '7', '-Strategy', 'merge')).Code | Should -Be 0 }
+    It 'accepte -Strategy merge sans -Subject, et garde la branche (release, hotfix)' {
+        Approve
+        $r = Invoke-MergePr @('-Pr', '7', '-Strategy', 'merge')
+        $r.Code | Should -Be 0
+        $r.Output | Should -Not -Match '--delete-branch'
+    }
     It 'refuse une stratégie rebase' { Approve; (Invoke-MergePr @('-Pr', '7', '-Strategy', 'rebase')).Code | Should -Not -Be 0 }
     It 'ne fusionne jamais pour de vrai avec des données simulées (sans mode essai)' {
         Approve

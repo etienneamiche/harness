@@ -28,7 +28,7 @@
     "gh\\s+issue\\s+(create|edit|close|reopen|comment|delete|transfer)\\b": ["git-ops"],
     "gh\\s+release\\s+(create|edit|delete|upload)\\b": ["git-ops"],
     "gh\\s+repo\\s+(create|delete|edit|rename|archive)\\b": [],
-    "gh\\s+api\\b[^;&|]*\\s(-X|--method)\\s*(POST|PATCH|PUT|DELETE)\\b": []
+    "\\bgh\\s+api\\b[^;&|]*(\\s(-X|--method)(=|\\s*)(POST|PATCH|PUT|DELETE)\\b|\\s(-f|-F|--field|--raw-field|--input)(=|\\s)|\\sgraphql\\b)": []
   },
   "protectedBranches": {{ '["main", "develop"]' if gitflow else ('["main"]' if kind == 'infra' else '[]') }},
   "requireIssueRef": {{ 'true' if gitflow else 'false' }},

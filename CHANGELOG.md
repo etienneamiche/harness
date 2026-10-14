@@ -37,6 +37,15 @@ La deuxième revue a trouvé deux défauts introduits par ces corrections, eux a
 - **`git-guard` pouvait vérifier la revue d'une autre PR** : il prenait le premier nombre de la commande, y compris dans le texte de `--subject`. La troisième revue a montré qu'aucune analyse de la ligne de commande ne serait fiable (échappements, commandes enchaînées, `--repo`) : la fusion directe est désormais interdite, au profit de `merge-pr.ps1` ;
 - **un test lançait le vrai hook `Stop` sur le projet réel** : il tourne désormais dans une copie jetable du harness.
 
+La quatrième revue a validé `merge-pr.ps1` (18 commandes de contournement essayées sur le vrai hook) et relevé cinq points, corrigés :
+- seul le marqueur de revue posé par **le compte GitHub courant** compte (les dépôts sont publics), et `git-guard` refuse le marqueur à tout autre agent qu'`auditor`, y compris par `--body-file` ;
+- la règle `homelab` se juge sur l'URL de la PR lue (une variable `GH_REPO` ne la contourne plus), et le dépôt est imposé à `gh` ;
+- la branche n'est supprimée qu'en squash (une `release/*` doit encore aller dans `develop`) ;
+- `git-guard` retire les options globales de git (`-C`, `-c`, `--git-dir`…) avant l'analyse ;
+- toute écriture par `gh api` (`--method=`, `-f`, `-F`, `--input`, `graphql`) est réservée à l'utilisateur.
+
+Ce qu'aucun hook ne peut fermer (mot cité ou découpé, alias, `curl` avec un jeton) relève d'une protection côté GitHub : voir la roadmap de `services`, phase 10.
+
 En les corrigeant, un troisième défaut est apparu : **le doctor affichait vert alors qu'un fichier de tests ne pouvait pas s'exécuter**. Il signale désormais tout fichier ou bloc de tests en erreur.
 
 ## [0.1.1] - 2026-10-14
