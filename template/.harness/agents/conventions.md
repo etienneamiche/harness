@@ -25,7 +25,7 @@ backend/       le back (s'il existe)
 deploy/        Chart.yaml + values.yaml
 docs/          la doc du projet
 docs/adr/      les décisions d'architecture
-scripts/       launch.ps1, test.ps1, lint.ps1, build.ps1
+scripts/       launch.ps1, test.ps1, lint.ps1, build.ps1, et db.ps1 si l'app a une base
 ```
 
 - Les tests suivent l'usage de leur stack : voir les conventions du module.
@@ -35,7 +35,7 @@ scripts/       launch.ps1, test.ps1, lint.ps1, build.ps1
 
 - **Branches** : `feature/<n>-<slug>`, `fix/<n>-<slug>`, `release/x.y.z`, `hotfix/x.y.z`, où `<n>` est le numéro d'issue.
 - **Une PR = une issue**, cible : moins de 400 lignes modifiées (hors fichiers générés et lockfiles). Au-delà, l'issue est probablement à découper : le signaler.
-- **Fusion en squash** : un commit par feature dans la branche cible.
+- **Fusion en squash** : un commit par feature dans la branche cible. Son message est **en anglais, en Conventional Commits**, et toujours **donné explicitement à la fusion** (`gh pr merge --squash --subject "feat(api): add PDF export for invoices (#42)"`) : sans ça, GitHub reprendrait le titre de la PR, qui est en français. Le hook `git-guard` refuse une fusion en squash sans `--subject`.
 - **Commits** : Conventional Commits, en anglais, numéro d'issue en fin de titre.
   - Types : `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `build`, `ci`, `chore`, `revert`.
   - Scope : la brique concernée (`web`, `api`, `db`, `deploy`, `harness`…).
@@ -53,7 +53,7 @@ scripts/       launch.ps1, test.ps1, lint.ps1, build.ps1
 
 - **Tout code métier nouveau arrive avec ses tests**, dans la même PR. `auditor` le vérifie avant fusion.
 - **Unitaires** pour la logique métier.
-- **Intégration** contre de vraies dépendances : le **Postgres local** (Docker), recréé et migré à chaque lancement de `scripts/test.ps1`, jamais une base simulée.
+- **Intégration**, pour une app qui a une base Postgres : contre le **Postgres local** (Docker), recréé et migré à chaque lancement de `scripts/test.ps1`, jamais une base simulée. Les modules Python (SQLite) et les fronts sans backend n'en ont pas.
 - **Composants** : leur comportement, vu par l'utilisateur (rôles, textes, interactions), jamais leur structure interne ni des instantanés.
 - **E2E (Playwright)** limités aux **parcours critiques**, 1 à 5 par app, avec un contrôle d'accessibilité **axe**.
 - **Couverture** : mesurée et affichée, **sans seuil bloquant**. Un test qui n'existe que pour le chiffre est pire que pas de test.

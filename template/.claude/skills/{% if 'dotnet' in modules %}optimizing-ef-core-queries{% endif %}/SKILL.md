@@ -3,7 +3,7 @@ name: optimizing-ef-core-queries
 description: "Review and optimize application data access that uses Entity Framework Core (EF Core). Use for EF Core performance and correctness reviews of services, repositories, imports, and background jobs: slow or memory-heavy queries, excessive round-trips, hidden SaveChanges, premature materialization, dynamic query construction, result-graph tracking, bulk writes, DbContext lifetime or overlapping operations, search semantics, paging, raw SQL, and model/index coverage. Use whether or not EF Core owns the schema. For EF Core, not Dapper or raw ADO.NET."
 license: MIT
 ---
-<!-- Adapté de dotnet/skills (plugins/dotnet-data/skills/optimizing-ef-core-queries), licence MIT, (c) .NET Foundation and Contributors. Modification : schéma géré en database-first + DbUp, pas de migration EF. -->
+<!-- Adapté de dotnet/skills (plugins/dotnet-data/skills/optimizing-ef-core-queries), licence MIT, Copyright (c) .NET Foundation and Contributors (texte complet : LICENSE, dans ce dossier). Modification : schéma géré en database-first + DbUp, pas de migration EF. -->
 
 # Optimizing EF Core Queries
 
@@ -213,11 +213,11 @@ Audit workload-specific coverage separately from moving filters into SQL. Inspec
 
 ```sql
 -- 0043.128.add-orders-customer-created-index.sql
-CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_orders_customer_id_created_at
+CREATE INDEX IF NOT EXISTS ix_orders_customer_id_created_at
     ON orders (customer_id, created_at); -- equality column first, then range/sort
 ```
 
-Then delegate to the `db-ops` subagent, which applies it locally and regenerates the EF code. Never apply anything to a non-local database. Don't over-index — every index slows writes.
+DbUp runs each script in a transaction, so `CREATE INDEX CONCURRENTLY` cannot be used there; on a large table where the lock matters, raise it with the user instead. Then delegate to the `db-ops` subagent, which applies it locally and regenerates the EF code. Never apply anything to a non-local database. Don't over-index — every index slows writes.
 
 Match equality columns, then range/sort keys. An unconstrained intermediate key can block the desired range/order even if an earlier equality column is covered. When all initial keys use equality, more than one order may work; do not condemn a reversed composite index from relationship metadata alone. A FK index can cover the relationship but not a different date-ordered workload. Consider an additional workload index rather than replacing one that supports another path. Model code proves intended metadata, not current physical indexes; weigh write cost and provider-specific coverage.
 

@@ -23,7 +23,14 @@ Questions posées : nom, description, **type de dépôt** (`app`, `game`, `sandb
 | `python` | Un petit module Python | Conventions Python, vérifications ruff + pyright, plugin `pyright-lsp` |
 | `game` | Un jeu multijoueur (avec `react` et `dotnet`) | Conventions jeu : serveur qui fait autorité, règles pures, salles, sauvegardes |
 
-Un module vit dans `template/.harness/modules/<nom>/` : `conventions.md` (importé par `core.md`), `module.json` (vérifications de fin de tour `stopChecks`, blocs structurels `structural`), et ses fichiers de configuration. Ajouter une techno = ajouter un module, sans toucher au cœur.
+Un module vit dans `template/.harness/modules/{% if '<nom>' in modules %}<nom>{% endif %}/` (le nom conditionnel fait qu'il n'est créé que si le module est choisi) : `conventions.md` (importé par `core.md`), `module.json` (vérifications de fin de tour `stopChecks`, blocs structurels `structural`), et ses fichiers de configuration.
+
+**Ajouter une techno**, c'est ajouter un module, sans toucher aux hooks ni au dispatcher. Il faut aussi :
+- l'ajouter aux `choices` de la question `modules` dans `copier.yml`, et à son `validator` s'il est incompatible avec un autre ;
+- déclarer son plugin LSP dans `template/.claude/settings.json.jinja`, s'il en a un ;
+- l'ajouter à un scénario de `tools/test.ps1`.
+
+Combinaisons refusées par Copier : `game` sans `dotnet` et `react` ; `python` avec `dotnet` (un dépôt n'a qu'un seul backend).
 
 ## Mettre à jour un projet
 

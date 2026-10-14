@@ -5,7 +5,7 @@ Module `dotnet` du harness. S'ajoute aux conventions communes (`.harness/agents/
 ## Socle
 
 - **.NET 10 LTS**, version figée dans `backend/global.json`. Solution au format **`.slnx`**.
-- `Directory.Build.props` : `Nullable` activé, `TreatWarningsAsErrors`, analyseurs `latest-recommended`, et la configuration d'analyse du harness (`.harness/modules/dotnet/analyzers.globalconfig`, via `GlobalAnalyzerConfigFiles`).
+- `Directory.Build.props` : `Nullable` activé, `TreatWarningsAsErrors`, analyseurs `latest-recommended`, **`EnforceCodeStyleInBuild`** (sans lui, `dotnet build` n'évalue aucune règle de style `IDExxxx`), `GenerateDocumentationFile` avec `NoWarn` `CS1591` (requis par IDE0005, sans imposer de documenter chaque membre public), et la configuration d'analyse du harness (`.harness/modules/dotnet/analyzers.globalconfig`, via `GlobalAnalyzerConfigFiles`). Ce fichier est protégé : un agent ne le modifie pas.
 - **Versions des paquets centralisées** dans `Directory.Packages.props`, tenues à jour par Renovate.
 - **Bibliothèques interdites** (devenues payantes) : MediatR, AutoMapper, FluentAssertions v8+.
 
@@ -16,7 +16,7 @@ backend/
 ├── MyApp.slnx · global.json · Directory.Build.props · Directory.Packages.props
 ├── db/migrations/             NNNN.<issue>.<slug>.sql (DbUp)
 ├── src/
-│   ├── MyApp.Api/             Program.cs, Controllers/, Validators/, Hubs/, MyApp.Api.http
+│   ├── MyApp.Api/             Program.cs, Controllers/ (+ un .http par contrôleur), Validators/, Hubs/
 │   ├── MyApp.Contracts/       DTO (requêtes, réponses), interfaces des hubs SignalR
 │   ├── MyApp.Services/        logique métier : I<Sujet>Service + implémentation
 │   ├── MyApp.Dal/             accès aux données : Generated/ (scaffolding), I<Sujet>Dal + implémentation
@@ -44,7 +44,7 @@ Un **test d'architecture** (NetArchTest, dans `MyApp.Api.Tests`) vérifie qu'auc
 - **Minces** : la validation est automatique, le contrôleur appelle un service et traduit son résultat en réponse HTTP. Aucune logique métier, aucun accès aux données.
 - **Codes de retour** : GET 200/404, POST 201 avec `CreatedAtAction` (en-tête `Location`), PUT/PATCH 200/404, DELETE 204/404, conflit 409. Chaque code possible est déclaré par `[ProducesResponseType]` : il apparaît dans OpenAPI, donc dans le client généré du front.
 - **`CancellationToken`** dans chaque action, transmis à tous les appels asynchrones.
-- **Un fichier `.http`** par contrôleur (`MyApp.Api.http` ou `Controllers/*.http`), avec une requête par action, cas d'erreur compris.
+- **Un fichier `.http` par contrôleur, à côté de lui** (`Controllers/InvoicesController.http`), avec une requête par action, cas d'erreur compris.
 
 ## Services
 
@@ -64,7 +64,7 @@ Un **test d'architecture** (NetArchTest, dans `MyApp.Api.Tests`) vérifie qu'auc
 - **Le schéma est défini en SQL**, pas par EF. Toute modification de la base est un nouveau fichier dans `backend/db/migrations/` : **`NNNN.<issue>.<slug>.sql`**, par exemple `0042.123.add-invoice-status.sql`.
   - `NNNN` : numéro d'ordre sur 4 chiffres, le suivant du plus grand existant. La CI refuse deux fichiers avec le même numéro.
   - **Un fichier appliqué ne se modifie jamais** : on en ajoute un nouveau.
-  - **Compatible avec la version précédente de l'app** (doc 07 §6) : on ajoute une colonne avant de retirer l'ancienne, à la release suivante.
+  - **Compatible avec la version précédente de l'app** : la migration s'exécute pendant que l'ancienne version sert encore. On ajoute une colonne avant de retirer l'ancienne, à la release suivante ; une colonne renommée en une seule release, c'est une panne pendant le déploiement.
 - **Le code EF est généré** depuis la base (`dotnet ef dbcontext scaffold`) dans `MyApp.Dal/Generated/`, **jamais modifié à la main** : les ajouts passent par des classes `partial` à côté.
 - **Le subagent `db-ops`** (Haiku) applique les migrations sur la base locale puis relance le scaffolding. Le déléguer à chaque fichier SQL ajouté.
 - **En production**, les migrations tournent dans le cluster : l'image `MyApp.Migrations` est lancée par un Job ArgoCD avant le déploiement (PreSync). La CI n'a jamais accès à la base.
@@ -97,7 +97,7 @@ Un **test d'architecture** (NetArchTest, dans `MyApp.Api.Tests`) vérifie qu'auc
 ## Authentification, utilisateur courant, droits
 
 - **Tout endpoint exige un utilisateur connecté par défaut** (politique de repli). L'accès anonyme se déclare explicitement avec `[AllowAnonymous]`.
-- Mode `oidc` : validation du jeton Authentik (`JwtBearer`). Mode `forward-auth` : identité lue dans les en-têtes posés par Authentik (seul Traefik peut joindre l'app, doc 07 §6).
+- Mode `oidc` : validation du jeton Authentik (`JwtBearer`). Mode `forward-auth` : identité lue dans les en-têtes posés par Authentik. Ces en-têtes ne sont fiables que parce qu'une NetworkPolicy garantit que seul Traefik peut joindre l'app.
 - **`ICurrentUser`** (fourni par `MarbleStudio.Hosting`) est le seul accès à l'identité : identifiant, email, nom, rôles, permissions. Personne ne lit `HttpContext` ailleurs.
 - **Rôles** : groupes Authentik `<app>-<rôle>` (`factures-admin`…), reçus dans le jeton. **Permissions** : définies par l'app (`Invoices.Read`, `Invoices.Write`…), dérivées des rôles, vérifiées par des *policies* : `[Authorize(Policy = Permissions.Invoices.Write)]`. **Le code ne teste jamais un rôle**, toujours une permission.
 - **Impersonation** : un utilisateur avec la permission `Users.Impersonate` envoie l'en-tête `X-Impersonate-User: <id>`. `ICurrentUser` expose alors l'utilisateur **effectif** et l'utilisateur **réel** ; chaque action est journalisée avec les deux. Une impersonation ne donne jamais la permission d'impersonner.
@@ -120,7 +120,7 @@ Une ligne dans `Program.cs` (`builder.AddMarbleStudioDefaults()`) branche : logs
 
 ## Style
 
-- Espaces de noms déclarés sur une ligne, **constructeurs primaires**, classes **`sealed`** par défaut, un type par fichier, dossiers = espaces de noms.
+- Espaces de noms déclarés sur une ligne, **constructeurs primaires**, classes **`sealed`** par défaut (les analyseurs ne le vérifient que pour les types `internal` : pour les types publics, c'est à la revue), un type par fichier, dossiers = espaces de noms.
 - Méthodes asynchrones suffixées `Async`, `CancellationToken` en dernier paramètre.
 - `dotnet format` et le build (avertissements = erreurs) tournent à chaque fin de tour d'agent.
 

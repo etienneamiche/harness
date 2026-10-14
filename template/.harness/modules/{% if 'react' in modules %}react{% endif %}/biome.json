@@ -1,4 +1,7 @@
 {
+  "files": {
+    "includes": ["**", "!**/src/api/generated/**", "!**/routeTree.gen.ts"]
+  },
   "formatter": {
     "enabled": true,
     "indentStyle": "space",

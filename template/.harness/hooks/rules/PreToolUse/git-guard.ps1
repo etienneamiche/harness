@@ -76,6 +76,14 @@
             if ("$origin $mergeArgs" -match '[/:]homelab(\.git)?\b') {
                 return @{ Decision = 'deny'; Reason = "une PR de homelab ne se fusionne qu'à la main par le propriétaire : fusionner dans homelab, c'est déployer." }
             }
+            # Squash : le message du commit fusionné doit être donné (en anglais), sinon GitHub
+            # reprend le titre de la PR, en français. Rebase : on ne réécrit pas les commits.
+            if ($mergeArgs -match '(^|\s)(--rebase|-r)(\s|$)') {
+                return @{ Decision = 'deny'; Reason = "pas de fusion par rebase : --squash pour une feature, --merge pour une release ou un hotfix." }
+            }
+            if ($mergeArgs -match '(^|\s)(--squash|-s)(\s|$)' -and $mergeArgs -notmatch '(^|\s)(--subject|-t)[\s=]') {
+                return @{ Decision = 'deny'; Reason = "fusion en squash sans message : ajouter --subject `"type(scope): description (#n)`" (en anglais, Conventional Commits)." }
+            }
             $number = if ($mergeArgs -match '(?<!\S)#?(\d+)\b') { $Matches[1] } else { '' }
             $pr = if ($env:HARNESS_TEST_PR_JSON) {
                 Get-Content $env:HARNESS_TEST_PR_JSON -Raw | ConvertFrom-Json -AsHashtable

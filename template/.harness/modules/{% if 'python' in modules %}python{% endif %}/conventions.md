@@ -71,6 +71,7 @@ Pas de couches service / dal : les routes appellent directement les fonctions du
 ## Qualité
 
 - **ruff** pour le lint et le format, **pyright** en mode `standard`. Les deux tournent à chaque fin de tour d'agent.
+- Leur configuration vit dans **`backend/ruff.toml`** et **`backend/pyrightconfig.json`**, pas dans `pyproject.toml` : ces deux fichiers sont protégés, un agent ne les modifie pas.
 - `print()` interdit : le logger de `marblestudio-hosting`.
 
 ## Tests

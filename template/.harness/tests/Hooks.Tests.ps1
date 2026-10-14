@@ -9,6 +9,10 @@ BeforeDiscovery {
     $cfg = Get-Content (Join-Path $PSScriptRoot '..' 'harness.json') -Raw | ConvertFrom-Json
     $Gitflow = [bool] $cfg.requireIssueRef
     $HasReact = Test-Path (Join-Path $PSScriptRoot '..' 'modules' 'react')
+    $HasDotnet = Test-Path (Join-Path $PSScriptRoot '..' 'modules' 'dotnet')
+    # Les tests qui créent des fichiers de projet ne tournent que dans un projet vierge (pas de backend/) :
+    # dans un vrai projet, ils ne doivent jamais toucher au code existant.
+    $PristineBackend = -not (Test-Path (Join-Path $PSScriptRoot '..' '..' 'backend'))
 }
 
 BeforeAll {
@@ -111,7 +115,7 @@ Describe 'git-guard : revue auditor avant fusion' {
         function Set-Pr([object[]] $Comments) {
             @{ number = 7; headRefOid = $script:Head; comments = $Comments } | ConvertTo-Json -Depth 5 | Set-Content $script:PrFile
         }
-        function Merge { Invoke-Hook -Data (Bash 'gh pr merge 7 --squash' 'git-ops') -Env @{ HARNESS_TEST_PR_JSON = $script:PrFile } }
+        function Merge([string] $MergeArgs = '--squash --subject "feat(api): add export (#7)"') { Invoke-Hook -Data (Bash "gh pr merge 7 $MergeArgs" 'git-ops') -Env @{ HARNESS_TEST_PR_JSON = $script:PrFile } }
     }
     AfterAll { Remove-Item $script:PrFile -ErrorAction SilentlyContinue }
 
@@ -134,6 +138,18 @@ Describe 'git-guard : revue auditor avant fusion' {
         Set-Pr @(@{ body = "<!-- auditor: sha=$($script:Head) verdict=approve -->" })
         (Invoke-Hook -Data (Bash 'gh pr merge 7' 'auditor') -Env @{ HARNESS_TEST_PR_JSON = $script:PrFile }).Decision | Should -Be 'deny'
     }
+    It 'refuse un squash sans message explicite (--subject)' {
+        Set-Pr @(@{ body = "<!-- auditor: sha=$($script:Head) verdict=approve -->" })
+        (Merge '--squash').Reason | Should -Match 'subject'
+    }
+    It 'accepte une fusion --merge approuvée (release, hotfix)' {
+        Set-Pr @(@{ body = "<!-- auditor: sha=$($script:Head) verdict=approve -->" })
+        (Merge '--merge').Decision | Should -Be 'allow'
+    }
+    It 'refuse une fusion par rebase' {
+        Set-Pr @(@{ body = "<!-- auditor: sha=$($script:Head) verdict=approve -->" })
+        (Merge '--rebase').Decision | Should -Be 'deny'
+    }
 }
 
 Describe 'destructive-guard' {
@@ -154,7 +170,8 @@ Describe 'config-protection' {
     It 'protège <path>' -ForEach @(
         @{ path = '.eslintrc.json' }, @{ path = 'frontend/eslint.config.mjs' }, @{ path = '.editorconfig' },
         @{ path = '.harness/hooks/rules/git-guard.ps1' }, @{ path = '.claude/settings.json' },
-        @{ path = '.claude/agents/dev.md' }, @{ path = '.github/workflows/ci.yml' }, @{ path = '.gitignore' }, @{ path = 'CLAUDE.md' }
+        @{ path = '.claude/agents/dev.md' }, @{ path = '.github/workflows/ci.yml' }, @{ path = '.gitignore' }, @{ path = 'CLAUDE.md' },
+        @{ path = 'backend/Directory.Build.props' }, @{ path = 'frontend/tsconfig.app.json' }, @{ path = 'backend/pyrightconfig.json' }, @{ path = 'backend/ruff.toml' }
     ) { (Invoke-Hook -Data (Tool 'Edit' @{ file_path = (Join-Path $script:Root $path); old_string = 'a'; new_string = 'b' })).Decision | Should -Be 'deny' }
     It 'laisse modifier le code et AGENTS.md (<path>)' -ForEach @(@{ path = 'src/app.ts' }, @{ path = 'AGENTS.md' }, @{ path = 'docs/adr/0001.md' }) {
         (Invoke-Hook -Data (Tool 'Edit' @{ file_path = (Join-Path $script:Root $path); old_string = 'a'; new_string = 'b' })).Decision | Should -Be 'allow'
@@ -202,6 +219,27 @@ Describe 'règles d''information' {
     }
     It 'structural-watch lit aussi les blocs déclarés par les modules' -Skip:(-not $HasReact) {
         (Invoke-Hook -EventName 'PostToolUse' -Data (Tool 'Edit' @{ file_path = (Join-Path $script:Root 'frontend/vite.config.ts') })).Reason | Should -Match '/upstream'
+    }
+    It 'structural-watch ne dit rien pour du code ordinaire' {
+        (Invoke-Hook -EventName 'PostToolUse' -Data (Tool 'Edit' @{ file_path = (Join-Path $script:Root 'frontend/src/features/x/Thing.tsx') })).Decision | Should -Be 'allow'
+    }
+    It 'stop-checks bloque des numéros de migration en double (module dotnet)' -Skip:(-not ($HasDotnet -and $PristineBackend)) {
+        $dir = Join-Path $script:Root 'backend' 'db' 'migrations'
+        New-Item -ItemType Directory -Force $dir | Out-Null
+        Set-Content (Join-Path $dir '0001.1.create-a.sql') 'SELECT 1;'
+        Set-Content (Join-Path $dir '0001.2.create-b.sql') 'SELECT 2;'
+        try {
+            $r = Invoke-Hook -EventName 'Stop' -Data @{ stop_hook_active = $false }
+            $r.Decision | Should -Be 'deny'
+            $r.Reason | Should -Match 'double'
+        }
+        finally {
+            # Ne supprime que ce que ce test a créé (le dossier backend/ n'existait pas avant lui).
+            Remove-Item (Join-Path $dir '0001.1.create-a.sql'), (Join-Path $dir '0001.2.create-b.sql')
+            foreach ($d in $dir, (Split-Path $dir), (Join-Path $script:Root 'backend')) {
+                if (-not (Get-ChildItem $d -Force)) { Remove-Item $d }
+            }
+        }
     }
     It 'session-info annonce la version du harness' {
         (Invoke-Hook -EventName 'SessionStart' -Data @{ source = 'startup' }).Reason | Should -Match 'Harness'

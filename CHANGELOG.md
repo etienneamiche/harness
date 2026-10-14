@@ -18,8 +18,20 @@ Les conventions de code (phase 3 de la roadmap) et le système de modules.
 - **Plugins LSP** selon les modules : `csharp-lsp`, `typescript-lsp`, `pyright-lsp`.
 
 ### Modifié
-- `git-ops` : messages de commit en anglais.
+- `git-ops` : messages de commit en anglais ; fusion d'une feature en squash avec `--subject` explicite en anglais (le titre de la PR reste en français).
+- `git-guard` refuse une fusion en squash sans `--subject`, et toute fusion par rebase.
 - `structural-watch` lit aussi les blocs structurels déclarés par les modules.
+- `stop-checks` voit les fichiers à l'intérieur d'un dossier non suivi (`--untracked-files=all`).
+- Chemins protégés : `backend/Directory.Build.props`, `tsconfig*.json`, `pyrightconfig.json`.
+- Copier refuse les combinaisons de modules incohérentes ; `tools/test.ps1` fonctionne par scénarios, dont un scénario invalide qui doit échouer.
+
+### Revue avant fusion
+La revue `auditor` de la PR #1 a relevé 7 constats importants et 15 mineurs, corrigés avant la fusion. Les principaux :
+- la vérification TypeScript ne compilait rien (`tsc -b`) ;
+- les règles de style .NET n'étaient pas évaluées au build (`EnforceCodeStyleInBuild`) ;
+- le module `game` contredisait les couches .NET ;
+- la licence MIT des skills adaptés était incomplète (fichier `LICENSE` ajouté) ;
+- les commits fusionnés auraient été en français.
 
 ## [0.1.1] - 2026-10-14
 

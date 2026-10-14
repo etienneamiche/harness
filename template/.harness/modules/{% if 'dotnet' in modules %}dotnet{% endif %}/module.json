@@ -10,7 +10,7 @@
     {
       "name": "dotnet build",
       "files": "^backend/.*\\.(cs|csproj|props|slnx)$",
-      "command": "dotnet build backend --nologo --verbosity quiet"
+      "command": "dotnet build backend --no-restore --nologo --verbosity quiet"
     },
     {
       "name": "migrations : numéros uniques",
@@ -21,6 +21,7 @@
   "structural": [
     "^backend/(global\\.json|Directory\\.Build\\.props|Directory\\.Packages\\.props)$",
     "^backend/src/[^/]+\\.Api/Program\\.cs$",
-    "^backend/src/[^/]+\\.Migrations/"
+    "^backend/src/[^/]+\\.Migrations/",
+    "^scripts/db\\.ps1$"
   ]
 }

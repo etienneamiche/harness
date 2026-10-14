@@ -7,7 +7,7 @@ description: >
   (voir optimizing-ef-core-queries et l'agent db-ops), ni pour les hubs SignalR.
 license: MIT
 ---
-<!-- Adapté de dotnet/skills (plugins/dotnet-aspnetcore/skills/dotnet-webapi), licence MIT, (c) .NET Foundation and Contributors. Modifications : contrôleurs uniquement, FluentValidation, ServiceResult, couches Controller → Service → Dal / Clients, droits par permissions. -->
+<!-- Adapté de dotnet/skills (plugins/dotnet-aspnetcore/skills/dotnet-webapi), licence MIT, Copyright (c) .NET Foundation and Contributors (texte complet : LICENSE, dans ce dossier). Modifications : contrôleurs uniquement, FluentValidation, ServiceResult, couches Controller → Service → Dal / Clients, droits par permissions. -->
 
 # Endpoint d'API ASP.NET Core
 
@@ -28,12 +28,12 @@ Les conventions du projet (`.harness/modules/dotnet/conventions.md`) priment. Ce
 | Réponse unitaire | `<Sujet>Response` | `sealed record` positionnel |
 | Réponse liste | `<Sujet>ListResponse` | `sealed record` positionnel, `IReadOnlyList<T>` |
 
-- Commentaire XML `<summary>` sur chaque DTO : il alimente OpenAPI, donc le client généré du front.
+- Commentaire XML `<summary>` **en anglais** sur chaque DTO et chaque action : il alimente OpenAPI, donc le client généré du front.
 - Dates en **`DateTimeOffset`**, énumérations sérialisées en chaînes.
 - Jamais d'entité EF exposée.
 
 ```csharp
-/// <summary>Données pour créer une facture.</summary>
+/// <summary>Payload for creating an invoice.</summary>
 public sealed record CreateInvoiceRequest
 {
     public required string Customer { get; init; }
@@ -41,7 +41,7 @@ public sealed record CreateInvoiceRequest
     public required DateTimeOffset DueDate { get; init; }
 }
 
-/// <summary>Une facture renvoyée par l'API.</summary>
+/// <summary>An invoice returned by the API.</summary>
 public sealed record InvoiceResponse(Guid Id, string Customer, decimal Amount, InvoiceStatus Status, DateTimeOffset DueDate);
 ```
 
@@ -77,7 +77,7 @@ La validation vérifie la **forme**. Une règle métier (doublon, état incompat
 [Route("api/invoices")]
 public sealed class InvoicesController(IInvoiceService invoices) : ControllerBase
 {
-    /// <summary>Renvoie une facture.</summary>
+    /// <summary>Gets an invoice by its identifier.</summary>
     [HttpGet("{id:guid}", Name = "GetInvoice")]
     [Authorize(Policy = Permissions.Invoices.Read)]
     [ProducesResponseType<InvoiceResponse>(StatusCodes.Status200OK)]
@@ -85,7 +85,7 @@ public sealed class InvoicesController(IInvoiceService invoices) : ControllerBas
     public async Task<ActionResult<InvoiceResponse>> Get(Guid id, CancellationToken cancellationToken) =>
         (await invoices.GetAsync(id, cancellationToken)).ToActionResult(this);
 
-    /// <summary>Crée une facture.</summary>
+    /// <summary>Creates an invoice.</summary>
     [HttpPost]
     [Authorize(Policy = Permissions.Invoices.Write)]
     [ProducesResponseType<InvoiceResponse>(StatusCodes.Status201Created)]
@@ -110,7 +110,7 @@ public sealed class InvoicesController(IInvoiceService invoices) : ControllerBas
 
 ## Étape 6 : le fichier `.http`
 
-Une requête par action dans `MyApp.Api/MyApp.Api.http` (ou un `.http` par contrôleur), avec un corps réaliste et au moins un cas d'erreur (identifiant inexistant, requête invalide).
+**Un fichier `.http` par contrôleur, à côté de lui** (`Controllers/InvoicesController.http`) : une requête par action, avec un corps réaliste et au moins un cas d'erreur (identifiant inexistant, requête invalide).
 
 ## Étape 7 : vérifier
 

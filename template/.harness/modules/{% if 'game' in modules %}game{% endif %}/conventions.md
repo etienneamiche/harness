@@ -16,7 +16,7 @@ Module `game` du harness, pour les projets issus de `template-game-multi`. S'ajo
 - **`Apply(GameState state, GameAction action) → (GameState newState, IReadOnlyList<GameEvent> events)`** : aucune dépendance (ni SignalR, ni horloge, ni hasard non injecté, ni base).
 - Le hasard (tirage, mélange) et le temps sont **injectés** (graine, horodatage dans l'action) : une partie se rejoue à l'identique à partir de son état de départ et de ses actions.
 - Le temps réel léger passe par le même mécanisme : une horloge serveur envoie des actions `Tick` / `TimeElapsed` à la salle.
-- `Game/` ne référence ni `Hubs/` ni `Rooms/` : les règles pourraient servir à un mode solo ou à un bot.
+- Les règles (`MyGame.Services/Game/`) ne dépendent ni de SignalR ni des salles : elles pourraient servir à un mode solo ou à un bot.
 
 ## Salles
 
@@ -29,6 +29,7 @@ Module `game` du harness, pour les projets issus de `template-game-multi`. S'ajo
 
 - **Invités par défaut** : un pseudo et un jeton émis par le serveur, gardé dans le navigateur. Aucun compte requis pour jouer.
 - **Connexion Authentik en option** (Google compris), pour un profil persistant, des statistiques et un historique.
+- Le jeton d'invité est **un schéma d'authentification à part entière** (enregistré à côté de celui d'Authentik) : la règle « tout endpoint exige un utilisateur connecté » reste vraie, un invité est un utilisateur connecté. `ICurrentUser` indique s'il s'agit d'un invité.
 
 ## Persistance (option `postgres`, database-first comme le module dotnet)
 
@@ -45,16 +46,20 @@ Module `game` du harness, pour les projets issus de `template-game-multi`. S'ajo
 
 ## Organisation
 
-```
-backend/src/MyGame.Api/
-├── Hubs/          GameHub typé (intentions entrantes, événements sortants)
-├── Rooms/         salles : file par salle, codes, reconnexion, sauvegardes
-└── Game/          GameState, actions, événements, Apply() : les règles
-frontend/src/features/
-├── lobby/         accueil, rejoindre, salle d'attente
-└── game/          plateau, contrôles, scores
-```
+Les couches du module `dotnet` s'appliquent : l'Api reste mince, la logique vit dans les services.
 
+```
+backend/src/
+├── MyGame.Api/Hubs/         GameHub typé : reçoit les intentions, les transmet, diffuse les événements
+├── MyGame.Contracts/        intentions, événements, interfaces du hub (TypeScript généré)
+├── MyGame.Services/
+│   ├── Game/                GameState, actions, événements, Apply() : les règles, sans dépendance
+│   └── Rooms/               salles : file par salle, codes, reconnexion, horloge
+└── MyGame.Dal/              profils, scores, sauvegardes de partie (option postgres)
+frontend/src/features/
+├── lobby/                   accueil, rejoindre, salle d'attente
+└── game/                    plateau, contrôles, scores
+```
 ## Tests
 
 - **Les règles d'abord** : tests unitaires xUnit sur `Apply()`, un état de départ, une suite d'actions, l'état et les événements attendus. C'est là que va l'essentiel de l'effort.

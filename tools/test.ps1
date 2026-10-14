@@ -8,15 +8,20 @@
     Utilise l'état courant du dépôt, modifications non commitées comprises
     (copier --vcs-ref HEAD). Code de sortie 1 au moindre échec.
 
-.PARAMETER Kind
-    Types de dépôt à générer. Par défaut : sandbox et root.
+.PARAMETER Scenario
+    Scénarios à générer (par défaut : tous) :
+      sandbox : kind=sandbox, modules react + dotnet + game ;
+      python  : kind=app, modules react + python ;
+      root    : kind=root, aucun module ;
+      invalid : combinaison refusée (game sans dotnet) : Copier doit échouer.
 
 .PARAMETER Keep
     Conserve les projets générés pour les inspecter.
 #>
 [CmdletBinding()]
 param(
-    [string[]] $Kind = @('sandbox', 'root'),
+    [ValidateSet('sandbox', 'python', 'root', 'invalid')]
+    [string[]] $Scenario = @('sandbox', 'python', 'root', 'invalid'),
     [switch] $Keep
 )
 
@@ -28,17 +33,31 @@ $failed = 0
 # Pas d'installation de plugins pour des projets jetables (registre de Claude Code).
 $env:HARNESS_SKIP_PLUGINS = '1'
 
-foreach ($k in $Kind) {
+$scenarios = @{
+    sandbox = @{ Kind = 'sandbox'; Modules = '["react", "dotnet", "game"]' }
+    python  = @{ Kind = 'app';     Modules = '["react", "python"]' }
+    root    = @{ Kind = 'root';    Modules = '[]' }
+    invalid = @{ Kind = 'app';     Modules = '["react", "game"]'; MustFail = $true }
+}
+
+foreach ($name in $Scenario) {
+    $s = $scenarios[$name]
+    $k = $s.Kind
     # Le dossier racine s'appelle `services` pour kind=root : claudeMdExcludes en dépend.
-    $dest = Join-Path $work $k ($k -eq 'root' ? 'services' : "test-$k")
+    $dest = Join-Path $work $name ($k -eq 'root' ? 'services' : "test-$name")
     New-Item -ItemType Directory -Force $dest | Out-Null
     git -C $dest init -q -b main
-    Write-Host "`n=== $k → $dest" -ForegroundColor Cyan
+    Write-Host "`n=== $name (kind=$k, modules=$($s.Modules)) → $dest" -ForegroundColor Cyan
 
-    # Le sandbox reçoit tous les modules, pour les tester ; les autres types aucun.
-    $modules = if ($k -eq 'sandbox') { '["react", "dotnet", "python", "game"]' } else { '[]' }
-    copier copy --quiet --trust --defaults --vcs-ref HEAD --data kind=$k --data "modules=$modules" --data "description=Projet de test ($k)" $repo $dest 2>&1 |
-        Where-Object { $_ -notmatch 'DirtyLocalWarning|dirty' } | Out-Host
+    $copierOutput = copier copy --quiet --trust --defaults --vcs-ref HEAD --data kind=$k --data "modules=$($s.Modules)" --data "description=Projet de test ($k)" $repo $dest 2>&1 |
+        Where-Object { $_ -notmatch 'DirtyLocalWarning|dirty|^\s*warn\(' }
+    # Un refus attendu n'affiche que sa raison, pas la trace Python complète.
+    if ($s.MustFail) { $copierOutput | Select-Object -Last 1 | Out-Host } else { $copierOutput | Out-Host }
+    if ($s.MustFail) {
+        if ($LASTEXITCODE -eq 0) { Write-Host 'combinaison invalide acceptée par Copier' -ForegroundColor Red; $failed++ }
+        else { Write-Host 'combinaison invalide refusée par Copier : OK' }
+        continue
+    }
     if ($LASTEXITCODE -ne 0) { Write-Host "copier a échoué" -ForegroundColor Red; $failed++; continue }
 
     pwsh -NoProfile -File (Join-Path $dest '.harness' 'tools' 'doctor.ps1') -Deep -Offline

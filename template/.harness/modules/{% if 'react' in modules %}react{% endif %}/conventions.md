@@ -83,7 +83,7 @@ frontend/src/
 ## Configuration
 
 - La configuration vient de **`/config.js`**, lu au démarrage et **validé par zod** dans `src/config.ts`. Une config invalide affiche une erreur claire au lieu d'une app à moitié cassée.
-- **Jamais `import.meta.env`** pour une valeur qui change selon l'environnement : la même image doit tourner partout (doc 07 §6).
+- **Jamais `import.meta.env`** pour une valeur qui change selon l'environnement : la même image doit tourner en local comme en production, seule `/config.js` change.
 
 ## Temps réel (`realtime: signalr`)
 

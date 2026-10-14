@@ -47,6 +47,8 @@ modules:
     - dotnet
     - python
     - game
+  validator: >-
+    {% if 'game' in modules and not ('dotnet' in modules and 'react' in modules) %}Le module game s'utilise avec dotnet et react.{% elif 'python' in modules and 'dotnet' in modules %}Un dépôt n'a qu'un seul backend : python et dotnet ne vont pas ensemble.{% endif %}
 
 hook_profile:
   type: str

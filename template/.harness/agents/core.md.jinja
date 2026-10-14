@@ -13,7 +13,8 @@ La session principale (Opus) orchestre. Elle confie le travail aux subagents, ch
 | Nettoyer le lint et le format | `linter` | Haiku |
 | Relire un diff pendant le développement | `reviewer` | Haiku |
 | Écrire un message de commit, commiter, pousser, ouvrir une PR, gérer issues et labels | `git-ops` | Haiku |
-| Résumer l'architecture existante | `cartographer` | Haiku |
+| Résumer l'architecture existante | `cartographer` | Haiku |{% if 'dotnet' in modules %}
+| Appliquer les migrations SQL en local et régénérer le code EF | `db-ops` | Haiku |{% endif %}
 | Concevoir : spécification, architecture, roadmap | `architect` | Opus |
 | Revue complète avant fusion, audit | `auditor` | Opus |
 

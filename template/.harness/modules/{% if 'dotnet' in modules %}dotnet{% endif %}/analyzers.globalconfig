@@ -1,5 +1,7 @@
 # Configuration d'analyse .NET commune (module dotnet du harness).
 # Référencée par backend/Directory.Build.props : <GlobalAnalyzerConfigFiles Include="..." />
+# Les règles IDExxxx ne sont évaluées au build qu'avec <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>,
+# et IDE0005 exige en plus <GenerateDocumentationFile>true</GenerateDocumentationFile> (avec NoWarn CS1591).
 is_global = true
 
 # Style imposé : vérifié au build (avertissements = erreurs)
@@ -12,7 +14,7 @@ dotnet_diagnostic.IDE0044.severity = warning   # champs readonly
 dotnet_diagnostic.IDE0055.severity = warning   # mise en forme
 
 # Qualité
-dotnet_diagnostic.CA1852.severity = warning    # types sealed
+dotnet_diagnostic.CA1852.severity = warning    # types internal non dérivés : sealed (les types publics ne sont pas couverts)
 dotnet_diagnostic.CA2007.severity = none       # ConfigureAwait inutile dans ASP.NET Core
 dotnet_diagnostic.CA2016.severity = warning    # transmettre le CancellationToken
 dotnet_diagnostic.CA1848.severity = suggestion # LoggerMessage : conseillé, pas imposé
