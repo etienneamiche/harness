@@ -67,6 +67,7 @@ Un **test d'architecture** (NetArchTest, dans `MyApp.Api.Tests`) vérifie qu'auc
   - **Compatible avec la version précédente de l'app** : la migration s'exécute pendant que l'ancienne version sert encore. On ajoute une colonne avant de retirer l'ancienne, à la release suivante ; une colonne renommée en une seule release, c'est une panne pendant le déploiement.
 - **Le code EF est généré** depuis la base (`dotnet ef dbcontext scaffold`) dans `MyApp.Dal/Generated/`, **jamais modifié à la main** : les ajouts passent par des classes `partial` à côté.
 - **Le subagent `db-ops`** (Haiku) applique les migrations sur la base locale puis relance le scaffolding. Le déléguer à chaque fichier SQL ajouté.
+- **L'exécutable `MyApp.Migrations` applique chaque script dans sa propre transaction** (`WithTransactionPerScript()`) : un script qui échoue n'est pas appliqué à moitié. Conséquence : pas de `CREATE INDEX CONCURRENTLY` dans une migration.
 - **En production**, les migrations tournent dans le cluster : l'image `MyApp.Migrations` est lancée par un Job ArgoCD avant le déploiement (PreSync). La CI n'a jamais accès à la base.
 - **Lectures** : `AsNoTracking`, projection directe vers un `record` avec `Select`, pagination bornée, `CancellationToken`. Le skill `optimizing-ef-core-queries` sert de grille de revue.
 - **Écritures** : dans `Dal` uniquement, par le suivi d'EF ou `ExecuteUpdateAsync` / `ExecuteDeleteAsync`.

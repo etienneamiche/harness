@@ -10,9 +10,6 @@ BeforeDiscovery {
     $Gitflow = [bool] $cfg.requireIssueRef
     $HasReact = Test-Path (Join-Path $PSScriptRoot '..' 'modules' 'react')
     $HasDotnet = Test-Path (Join-Path $PSScriptRoot '..' 'modules' 'dotnet')
-    # Les tests qui créent des fichiers de projet ne tournent que dans un projet vierge (pas de backend/) :
-    # dans un vrai projet, ils ne doivent jamais toucher au code existant.
-    $PristineBackend = -not (Test-Path (Join-Path $PSScriptRoot '..' '..' 'backend'))
 }
 
 BeforeAll {
@@ -24,13 +21,16 @@ BeforeAll {
             [string] $EventName = 'PreToolUse',
             [hashtable] $Data = @{},
             [hashtable] $Env = @{},
-            [string] $Raw
+            [string] $Raw,
+            [string] $Dispatch = $script:Dispatch
         )
-        $payload = @{ hook_event_name = $EventName; session_id = $script:SessionId; cwd = $script:Root } + $Data
+        # Les tests visent le profil standard, sauf s'ils en demandent un autre.
+        if (-not $Env.ContainsKey('HARNESS_HOOK_PROFILE')) { $Env = $Env + @{ HARNESS_HOOK_PROFILE = 'standard' } }
+        $payload = @{ hook_event_name = $EventName; session_id = $script:SessionId; cwd = (Split-Path (Split-Path (Split-Path $Dispatch))) } + $Data
         $json = if ($PSBoundParameters.ContainsKey('Raw')) { $Raw } else { $payload | ConvertTo-Json -Depth 10 -Compress }
         $saved = @{}
         foreach ($k in $Env.Keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k); [Environment]::SetEnvironmentVariable($k, $Env[$k]) }
-        try { $out = $json | pwsh -NoProfile -NonInteractive -File $script:Dispatch $EventName }
+        try { $out = $json | pwsh -NoProfile -NonInteractive -File $Dispatch $EventName }
         finally { foreach ($k in $saved.Keys) { [Environment]::SetEnvironmentVariable($k, $saved[$k]) } }
 
         $text = ($out | Out-String).Trim()
@@ -146,6 +146,23 @@ Describe 'git-guard : revue auditor avant fusion' {
         Set-Pr @(@{ body = "<!-- auditor: sha=$($script:Head) verdict=approve -->" })
         (Merge '--merge').Decision | Should -Be 'allow'
     }
+    It 'lit le bon numéro de PR malgré des chiffres dans --subject' {
+        Set-Pr @(@{ body = "<!-- auditor: sha=$($script:Head) verdict=approve -->" })
+        $cmd = 'gh pr merge --squash --subject "feat(web): add 2 themes (#45)" 7'
+        (Invoke-Hook -Data (Bash $cmd 'git-ops') -Env @{ HARNESS_TEST_PR_JSON = $script:PrFile }).Decision | Should -Be 'allow'
+    }
+    It 'refuse une fusion sans numéro de PR explicite' {
+        Set-Pr @(@{ body = "<!-- auditor: sha=$($script:Head) verdict=approve -->" })
+        (Invoke-Hook -Data (Bash 'gh pr merge --squash --subject "fix: retry 3 times (#42)"' 'git-ops') -Env @{ HARNESS_TEST_PR_JSON = $script:PrFile }).Reason | Should -Match 'numéro de PR'
+    }
+    It 'ne prend pas un -r du sujet pour un rebase' {
+        Set-Pr @(@{ body = "<!-- auditor: sha=$($script:Head) verdict=approve -->" })
+        (Merge '--squash --subject "chore: drop -r flag (#7)"').Decision | Should -Be 'allow'
+    }
+    It 'ne prend pas un --subject cité dans --body pour un vrai --subject' {
+        Set-Pr @(@{ body = "<!-- auditor: sha=$($script:Head) verdict=approve -->" })
+        (Merge '--squash --body "add --subject next time"').Reason | Should -Match 'subject'
+    }
     It 'refuse une fusion par rebase' {
         Set-Pr @(@{ body = "<!-- auditor: sha=$($script:Head) verdict=approve -->" })
         (Merge '--rebase').Decision | Should -Be 'deny'
@@ -223,23 +240,23 @@ Describe 'règles d''information' {
     It 'structural-watch ne dit rien pour du code ordinaire' {
         (Invoke-Hook -EventName 'PostToolUse' -Data (Tool 'Edit' @{ file_path = (Join-Path $script:Root 'frontend/src/features/x/Thing.tsx') })).Decision | Should -Be 'allow'
     }
-    It 'stop-checks bloque des numéros de migration en double (module dotnet)' -Skip:(-not ($HasDotnet -and $PristineBackend)) {
-        $dir = Join-Path $script:Root 'backend' 'db' 'migrations'
+    It 'stop-checks bloque des numéros de migration en double (module dotnet)' -Skip:(-not $HasDotnet) {
+        # Copie jetable du harness dans un dépôt vide : le vrai hook Stop ne tourne jamais sur le
+        # projet réel (il lancerait les vérifications des modules, dont des formateurs qui réécrivent).
+        $copy = Join-Path ([IO.Path]::GetTempPath()) "harness-stop-$([guid]::NewGuid())"
+        New-Item -ItemType Directory -Force $copy | Out-Null
+        Copy-Item (Join-Path $script:Root '.harness') $copy -Recurse
+        git -C $copy init -q
+        $dir = Join-Path $copy 'backend' 'db' 'migrations'
         New-Item -ItemType Directory -Force $dir | Out-Null
         Set-Content (Join-Path $dir '0001.1.create-a.sql') 'SELECT 1;'
         Set-Content (Join-Path $dir '0001.2.create-b.sql') 'SELECT 2;'
         try {
-            $r = Invoke-Hook -EventName 'Stop' -Data @{ stop_hook_active = $false }
+            $r = Invoke-Hook -EventName 'Stop' -Data @{ stop_hook_active = $false } -Dispatch (Join-Path $copy '.harness' 'hooks' 'dispatch.ps1')
             $r.Decision | Should -Be 'deny'
             $r.Reason | Should -Match 'double'
         }
-        finally {
-            # Ne supprime que ce que ce test a créé (le dossier backend/ n'existait pas avant lui).
-            Remove-Item (Join-Path $dir '0001.1.create-a.sql'), (Join-Path $dir '0001.2.create-b.sql')
-            foreach ($d in $dir, (Split-Path $dir), (Join-Path $script:Root 'backend')) {
-                if (-not (Get-ChildItem $d -Force)) { Remove-Item $d }
-            }
-        }
+        finally { Remove-Item $copy -Recurse -Force }
     }
     It 'session-info annonce la version du harness' {
         (Invoke-Hook -EventName 'SessionStart' -Data @{ source = 'startup' }).Reason | Should -Match 'Harness'

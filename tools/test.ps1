@@ -20,8 +20,8 @@
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('sandbox', 'python', 'root', 'invalid')]
-    [string[]] $Scenario = @('sandbox', 'python', 'root', 'invalid'),
+    [ValidateSet('sandbox', 'python', 'root', 'invalid', 'invalid2')]
+    [string[]] $Scenario = @('sandbox', 'python', 'root', 'invalid', 'invalid2'),
     [switch] $Keep
 )
 
@@ -37,7 +37,8 @@ $scenarios = @{
     sandbox = @{ Kind = 'sandbox'; Modules = '["react", "dotnet", "game"]' }
     python  = @{ Kind = 'app';     Modules = '["react", "python"]' }
     root    = @{ Kind = 'root';    Modules = '[]' }
-    invalid = @{ Kind = 'app';     Modules = '["react", "game"]'; MustFail = $true }
+    invalid = @{ Kind = 'app';     Modules = '["react", "game"]'; MustFail = 'game s''utilise avec dotnet et react' }
+    invalid2 = @{ Kind = 'app';    Modules = '["react", "dotnet", "python"]'; MustFail = 'un seul backend' }
 }
 
 foreach ($name in $Scenario) {
@@ -54,8 +55,10 @@ foreach ($name in $Scenario) {
     # Un refus attendu n'affiche que sa raison, pas la trace Python complète.
     if ($s.MustFail) { $copierOutput | Select-Object -Last 1 | Out-Host } else { $copierOutput | Out-Host }
     if ($s.MustFail) {
+        # Le refus doit venir du validateur, avec la bonne raison : pas de n'importe quelle erreur.
         if ($LASTEXITCODE -eq 0) { Write-Host 'combinaison invalide acceptée par Copier' -ForegroundColor Red; $failed++ }
-        else { Write-Host 'combinaison invalide refusée par Copier : OK' }
+        elseif (($copierOutput | Out-String) -notmatch [regex]::Escape($s.MustFail)) { Write-Host "refus pour une autre raison que « $($s.MustFail) »" -ForegroundColor Red; $failed++ }
+        else { Write-Host 'combinaison invalide refusée par Copier, pour la bonne raison : OK' }
         continue
     }
     if ($LASTEXITCODE -ne 0) { Write-Host "copier a échoué" -ForegroundColor Red; $failed++; continue }

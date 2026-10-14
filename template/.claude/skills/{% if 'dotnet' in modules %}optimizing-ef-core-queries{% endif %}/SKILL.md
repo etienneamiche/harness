@@ -217,7 +217,7 @@ CREATE INDEX IF NOT EXISTS ix_orders_customer_id_created_at
     ON orders (customer_id, created_at); -- equality column first, then range/sort
 ```
 
-DbUp runs each script in a transaction, so `CREATE INDEX CONCURRENTLY` cannot be used there; on a large table where the lock matters, raise it with the user instead. Then delegate to the `db-ops` subagent, which applies it locally and regenerates the EF code. Never apply anything to a non-local database. Don't over-index — every index slows writes.
+The project's DbUp runner wraps each script in its own transaction (`WithTransactionPerScript()`, see the dotnet conventions), so `CREATE INDEX CONCURRENTLY` cannot be used there; on a large table where the lock matters, raise it with the user instead. Then delegate to the `db-ops` subagent, which applies it locally and regenerates the EF code. Never apply anything to a non-local database. Don't over-index — every index slows writes.
 
 Match equality columns, then range/sort keys. An unconstrained intermediate key can block the desired range/order even if an earlier equality column is covered. When all initial keys use equality, more than one order may work; do not condemn a reversed composite index from relationship metadata alone. A FK index can cover the relationship but not a different date-ordered workload. Consider an additional workload index rather than replacing one that supports another path. Model code proves intended metadata, not current physical indexes; weigh write cost and provider-specific coverage.
 

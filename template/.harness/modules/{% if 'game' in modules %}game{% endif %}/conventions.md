@@ -48,6 +48,8 @@ Module `game` du harness, pour les projets issus de `template-game-multi`. S'ajo
 
 Les couches du module `dotnet` s'appliquent : l'Api reste mince, la logique vit dans les services.
 
+**Des salles vers les joueurs** : `Rooms` publie ses événements par une interface définie dans `Services` (`IRoomNotifier`). L'Api l'implémente avec `IHubContext<GameHub, IGameClient>`. Les services ne dépendent donc jamais de SignalR.
+
 ```
 backend/src/
 ├── MyGame.Api/Hubs/         GameHub typé : reçoit les intentions, les transmet, diffuse les événements

@@ -76,15 +76,25 @@
             if ("$origin $mergeArgs" -match '[/:]homelab(\.git)?\b') {
                 return @{ Decision = 'deny'; Reason = "une PR de homelab ne se fusionne qu'à la main par le propriétaire : fusionner dans homelab, c'est déployer." }
             }
+            # Les options s'analysent sans le texte libre : un nombre, un `-r` ou un `--subject`
+            # écrits DANS un --subject ou un --body ne doivent rien changer à la décision.
+            $bare = $mergeArgs -replace '"(\\.|[^"\\])*"', '""' -replace "'[^']*'", "''"
+
             # Squash : le message du commit fusionné doit être donné (en anglais), sinon GitHub
             # reprend le titre de la PR, en français. Rebase : on ne réécrit pas les commits.
-            if ($mergeArgs -match '(^|\s)(--rebase|-r)(\s|$)') {
+            if ($bare -match '(^|\s)(--rebase|-r)(\s|$)') {
                 return @{ Decision = 'deny'; Reason = "pas de fusion par rebase : --squash pour une feature, --merge pour une release ou un hotfix." }
             }
-            if ($mergeArgs -match '(^|\s)(--squash|-s)(\s|$)' -and $mergeArgs -notmatch '(^|\s)(--subject|-t)[\s=]') {
+            if ($bare -match '(^|\s)(--squash|-s)(\s|$)' -and $bare -notmatch '(^|\s)(--subject|-t)([\s=]|$)') {
                 return @{ Decision = 'deny'; Reason = "fusion en squash sans message : ajouter --subject `"type(scope): description (#n)`" (en anglais, Conventional Commits)." }
             }
-            $number = if ($mergeArgs -match '(?<!\S)#?(\d+)\b') { $Matches[1] } else { '' }
+
+            # Numéro de PR explicite et sans ambiguïté : c'est la revue de CETTE PR qu'on vérifie.
+            $numbers = @([regex]::Matches($bare, '(?<!\S)#?(\d+)(?!\S)') | ForEach-Object { $_.Groups[1].Value })
+            if ($numbers.Count -ne 1) {
+                return @{ Decision = 'deny'; Reason = "préciser exactement un numéro de PR (gh pr merge <n> …) : la revue auditor est vérifiée sur cette PR-là." }
+            }
+            $number = $numbers[0]
             $pr = if ($env:HARNESS_TEST_PR_JSON) {
                 Get-Content $env:HARNESS_TEST_PR_JSON -Raw | ConvertFrom-Json -AsHashtable
             }
@@ -94,6 +104,9 @@
                 finally { Pop-Location }
             }
             if (-not $pr) { return @{ Decision = 'deny'; Reason = "impossible de lire la PR $number pour vérifier sa revue auditor." } }
+            if ([string] $pr.number -ne $number) {
+                return @{ Decision = 'deny'; Reason = "la PR lue (#$($pr.number)) n'est pas celle demandée (#$number) : fusion refusée par sécurité." }
+            }
 
             $head = $pr.headRefOid
             $verdict = $null

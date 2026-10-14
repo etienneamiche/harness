@@ -33,6 +33,12 @@ La revue `auditor` de la PR #1 a relevé 7 constats importants et 15 mineurs, co
 - la licence MIT des skills adaptés était incomplète (fichier `LICENSE` ajouté) ;
 - les commits fusionnés auraient été en français.
 
+La deuxième revue a trouvé deux défauts introduits par ces corrections, eux aussi corrigés :
+- **`git-guard` pouvait vérifier la revue d'une autre PR** : il prenait le premier nombre de la commande, y compris dans le texte de `--subject`. Il analyse désormais la commande sans son texte libre, exige exactement un numéro de PR, et vérifie que la PR lue est bien celle-là ;
+- **un test lançait le vrai hook `Stop` sur le projet réel** : il tourne désormais dans une copie jetable du harness.
+
+En les corrigeant, un troisième défaut est apparu : **le doctor affichait vert alors qu'un fichier de tests ne pouvait pas s'exécuter**. Il signale désormais tout fichier ou bloc de tests en erreur.
+
 ## [0.1.1] - 2026-10-14
 
 ### Corrigé
