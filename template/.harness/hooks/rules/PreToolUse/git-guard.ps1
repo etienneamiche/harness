@@ -9,7 +9,8 @@
     Run      = {
         param($ctx)
         $cmd = Get-Value $ctx.ToolInput 'command' ''
-        if ($cmd -notmatch '\b(git|gh)\b') { return }
+        # merge-pr.ps1 ne contient ni « git » ni « gh » : il doit quand même passer par les règles.
+        if ($cmd -notmatch '\b(git|gh)\b|merge-pr\.ps1') { return }
         $agent = $ctx.AgentType
         $config = $ctx.Config
         $who = if ($agent) { "l'agent '$agent'" } else { 'la session principale' }
@@ -69,61 +70,12 @@
             }
         }
 
-        # 5. Fusion d'une PR.
-        if ($cmd -match 'gh\s+pr\s+merge\b(?<args>[^;&|]*)') {
-            $mergeArgs = $Matches['args']
-            $origin = git -C $ctx.Cwd remote get-url origin 2>$null
-            if ("$origin $mergeArgs" -match '[/:]homelab(\.git)?\b') {
-                return @{ Decision = 'deny'; Reason = "une PR de homelab ne se fusionne qu'à la main par le propriétaire : fusionner dans homelab, c'est déployer." }
-            }
-            # Les options s'analysent sans le texte libre : un nombre, un `-r` ou un `--subject`
-            # écrits DANS un --subject ou un --body ne doivent rien changer à la décision.
-            $bare = $mergeArgs -replace '"(\\.|[^"\\])*"', '""' -replace "'[^']*'", "''"
-
-            # Squash : le message du commit fusionné doit être donné (en anglais), sinon GitHub
-            # reprend le titre de la PR, en français. Rebase : on ne réécrit pas les commits.
-            if ($bare -match '(^|\s)(--rebase|-r)(\s|$)') {
-                return @{ Decision = 'deny'; Reason = "pas de fusion par rebase : --squash pour une feature, --merge pour une release ou un hotfix." }
-            }
-            if ($bare -match '(^|\s)(--squash|-s)(\s|$)' -and $bare -notmatch '(^|\s)(--subject|-t)([\s=]|$)') {
-                return @{ Decision = 'deny'; Reason = "fusion en squash sans message : ajouter --subject `"type(scope): description (#n)`" (en anglais, Conventional Commits)." }
-            }
-
-            # Numéro de PR explicite et sans ambiguïté : c'est la revue de CETTE PR qu'on vérifie.
-            $numbers = @([regex]::Matches($bare, '(?<!\S)#?(\d+)(?!\S)') | ForEach-Object { $_.Groups[1].Value })
-            if ($numbers.Count -ne 1) {
-                return @{ Decision = 'deny'; Reason = "préciser exactement un numéro de PR (gh pr merge <n> …) : la revue auditor est vérifiée sur cette PR-là." }
-            }
-            $number = $numbers[0]
-            $pr = if ($env:HARNESS_TEST_PR_JSON) {
-                Get-Content $env:HARNESS_TEST_PR_JSON -Raw | ConvertFrom-Json -AsHashtable
-            }
-            else {
-                Push-Location $ctx.Cwd
-                try { gh pr view $number --json number,headRefOid,comments 2>$null | ConvertFrom-Json -AsHashtable }
-                finally { Pop-Location }
-            }
-            if (-not $pr) { return @{ Decision = 'deny'; Reason = "impossible de lire la PR $number pour vérifier sa revue auditor." } }
-            if ([string] $pr.number -ne $number) {
-                return @{ Decision = 'deny'; Reason = "la PR lue (#$($pr.number)) n'est pas celle demandée (#$number) : fusion refusée par sécurité." }
-            }
-
-            $head = $pr.headRefOid
-            $verdict = $null
-            foreach ($comment in @($pr.comments)) {
-                if ($comment.body -match '<!--\s*auditor:\s*sha=(?<sha>[0-9a-f]{7,40})\s+verdict=(?<v>\w+)\s*-->') {
-                    $verdict = @{ Sha = $Matches['sha']; Value = $Matches['v'] }
-                }
-            }
-            if (-not $verdict) {
-                return @{ Decision = 'deny'; Reason = "la PR #$($pr.number) n'a pas de revue auditor. Lancer /audit-pr avant de fusionner." }
-            }
-            if (-not $head.StartsWith($verdict.Sha)) {
-                return @{ Decision = 'deny'; Reason = "la revue auditor porte sur $($verdict.Sha), mais la PR a reçu des commits depuis (dernier : $($head.Substring(0,7))). Relancer /audit-pr." }
-            }
-            if ($verdict.Value -ne 'approve') {
-                return @{ Decision = 'deny'; Reason = "la dernière revue auditor demande des changements ($($verdict.Value)). Corriger puis relancer /audit-pr." }
-            }
+        # 5. Fusion d'une PR : jamais par `gh pr merge` direct. Une ligne de commande ne se laisse pas
+        # analyser de façon fiable (échappements, commandes enchaînées, --repo…) : la fusion passe par
+        # .harness/tools/merge-pr.ps1, aux paramètres typés, qui vérifie la revue auditor et fusionne
+        # le commit revu et lui seul (--match-head-commit). Ce script est réservé à git-ops (§2).
+        if ($cmd -match '\bgh\b[^;&|]*\bpr\s+merge\b') {
+            return @{ Decision = 'deny'; Reason = "pas de 'gh pr merge' direct : fusionner avec pwsh -NoProfile -File .harness/tools/merge-pr.ps1 -Pr <n> -Subject `"type(scope): description (#n)`" (-Strategy merge pour une release ou un hotfix)." }
         }
     }
 }

@@ -18,8 +18,8 @@ Les conventions de code (phase 3 de la roadmap) et le système de modules.
 - **Plugins LSP** selon les modules : `csharp-lsp`, `typescript-lsp`, `pyright-lsp`.
 
 ### Modifié
-- `git-ops` : messages de commit en anglais ; fusion d'une feature en squash avec `--subject` explicite en anglais (le titre de la PR reste en français).
-- `git-guard` refuse une fusion en squash sans `--subject`, et toute fusion par rebase.
+- `git-ops` : messages de commit en anglais ; le message du commit fusionné est donné explicitement, en anglais (le titre de la PR reste en français).
+- **La fusion passe par `.harness/tools/merge-pr.ps1`**, réservé à `git-ops` : paramètres typés, revue `auditor` vérifiée, fusion du seul commit revu (`--match-head-commit`), squash avec message obligatoire ou `merge` pour une release. `git-guard` refuse tout `gh pr merge` direct.
 - `structural-watch` lit aussi les blocs structurels déclarés par les modules.
 - `stop-checks` voit les fichiers à l'intérieur d'un dossier non suivi (`--untracked-files=all`).
 - Chemins protégés : `backend/Directory.Build.props`, `tsconfig*.json`, `pyrightconfig.json`.
@@ -34,7 +34,7 @@ La revue `auditor` de la PR #1 a relevé 7 constats importants et 15 mineurs, co
 - les commits fusionnés auraient été en français.
 
 La deuxième revue a trouvé deux défauts introduits par ces corrections, eux aussi corrigés :
-- **`git-guard` pouvait vérifier la revue d'une autre PR** : il prenait le premier nombre de la commande, y compris dans le texte de `--subject`. Il analyse désormais la commande sans son texte libre, exige exactement un numéro de PR, et vérifie que la PR lue est bien celle-là ;
+- **`git-guard` pouvait vérifier la revue d'une autre PR** : il prenait le premier nombre de la commande, y compris dans le texte de `--subject`. La troisième revue a montré qu'aucune analyse de la ligne de commande ne serait fiable (échappements, commandes enchaînées, `--repo`) : la fusion directe est désormais interdite, au profit de `merge-pr.ps1` ;
 - **un test lançait le vrai hook `Stop` sur le projet réel** : il tourne désormais dans une copie jetable du harness.
 
 En les corrigeant, un troisième défaut est apparu : **le doctor affichait vert alors qu'un fichier de tests ne pouvait pas s'exécuter**. Il signale désormais tout fichier ou bloc de tests en erreur.

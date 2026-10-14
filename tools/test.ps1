@@ -30,6 +30,8 @@ $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $work = Join-Path ([IO.Path]::GetTempPath()) "harness-test-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
 $failed = 0
+# Copier (Python) écrit en UTF-8 : sans ça, ses messages accentués s'affichent mal.
+$env:PYTHONUTF8 = '1'
 # Pas d'installation de plugins pour des projets jetables (registre de Claude Code).
 $env:HARNESS_SKIP_PLUGINS = '1'
 

@@ -108,64 +108,69 @@ Describe 'git-guard' {
     It 'laisse passer les lectures Git' { (Invoke-Hook -Data (Bash 'git status; git log --oneline -5; git diff')).Decision | Should -Be 'allow' }
 }
 
-Describe 'git-guard : revue auditor avant fusion' {
+Describe 'git-guard : fusion uniquement par merge-pr.ps1' {
+    It 'refuse tout gh pr merge direct, même pour git-ops (<cmd>)' -ForEach @(
+        @{ cmd = 'gh pr merge 7 --squash --subject "feat: x (#7)"' }, @{ cmd = 'gh pr merge 7 --merge' },
+        @{ cmd = 'gh -R someone/other pr merge 7 --squash' }, @{ cmd = 'git status && gh pr merge 9' }
+    ) { (Invoke-Hook -Data (Bash $cmd 'git-ops')).Reason | Should -Match 'merge-pr\.ps1' }
+    It 'réserve merge-pr.ps1 à git-ops' {
+        (Invoke-Hook -Data (Bash 'pwsh -NoProfile -File .harness/tools/merge-pr.ps1 -Pr 7 -Subject "feat: x (#7)"' 'auditor')).Decision | Should -Be 'deny'
+        (Invoke-Hook -Data (Bash 'pwsh -NoProfile -File .harness/tools/merge-pr.ps1 -Pr 7 -Subject "feat: x (#7)"')).Decision | Should -Be 'deny'
+    }
+    It 'laisse git-ops lancer merge-pr.ps1' {
+        (Invoke-Hook -Data (Bash 'pwsh -NoProfile -File .harness/tools/merge-pr.ps1 -Pr 7 -Subject "feat: x (#7)"' 'git-ops')).Decision | Should -Be 'allow'
+    }
+}
+
+Describe 'merge-pr.ps1' {
     BeforeAll {
+        $script:MergeScript = Join-Path $script:Root '.harness' 'tools' 'merge-pr.ps1'
         $script:PrFile = Join-Path ([IO.Path]::GetTempPath()) "harness-pr-$([guid]::NewGuid()).json"
         $script:Head = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
-        function Set-Pr([object[]] $Comments) {
-            @{ number = 7; headRefOid = $script:Head; comments = $Comments } | ConvertTo-Json -Depth 5 | Set-Content $script:PrFile
+        function Set-Pr([object[]] $Comments, [int] $Number = 7, [string] $State = 'OPEN') {
+            @{ number = $Number; state = $State; headRefOid = $script:Head; comments = $Comments } | ConvertTo-Json -Depth 5 | Set-Content $script:PrFile
         }
-        function Merge([string] $MergeArgs = '--squash --subject "feat(api): add export (#7)"') { Invoke-Hook -Data (Bash "gh pr merge 7 $MergeArgs" 'git-ops') -Env @{ HARNESS_TEST_PR_JSON = $script:PrFile } }
+        function Approve { Set-Pr @(@{ body = "Revue`n<!-- auditor: sha=$($script:Head) verdict=approve -->" }) }
+        # Lance le script en mode essai (aucune fusion réelle), avec la PR simulée.
+        function Invoke-MergePr([string[]] $ScriptArgs, [hashtable] $Env = @{ HARNESS_TEST_DRYRUN = '1' }) {
+            $vars = @{ HARNESS_TEST_PR_JSON = $script:PrFile } + $Env
+            $saved = @{}
+            foreach ($k in $vars.Keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k); [Environment]::SetEnvironmentVariable($k, $vars[$k]) }
+            try { $out = pwsh -NoProfile -NonInteractive -File $script:MergeScript @ScriptArgs 2>&1 | Out-String; $code = $LASTEXITCODE }
+            finally { foreach ($k in $saved.Keys) { [Environment]::SetEnvironmentVariable($k, $saved[$k]) } }
+            [pscustomobject]@{ Code = $code; Output = $out }
+        }
+        $script:Ok = @('-Pr', '7', '-Subject', 'feat(api): add export (#7)')
     }
-    AfterAll { Remove-Item $script:PrFile -ErrorAction SilentlyContinue }
+    AfterAll { [IO.File]::Delete($script:PrFile) }
 
-    It 'refuse une PR sans revue' { Set-Pr @(@{ body = 'LGTM' }); (Merge).Decision | Should -Be 'deny' }
-    It 'accepte une PR approuvée sur son dernier commit' {
-        Set-Pr @(@{ body = "Revue`n<!-- auditor: sha=$($script:Head) verdict=approve -->" })
-        (Merge).Decision | Should -Be 'allow'
+    It 'fusionne une PR approuvée sur son dernier commit, ce commit-là et lui seul' {
+        Approve
+        $r = Invoke-MergePr $script:Ok
+        $r.Code | Should -Be 0
+        $r.Output | Should -Match "--match-head-commit $($script:Head)"
+        $r.Output | Should -Match '--squash'
     }
+    It 'refuse une PR sans revue' { Set-Pr @(@{ body = 'LGTM' }); (Invoke-MergePr $script:Ok).Code | Should -Be 1 }
     It 'refuse une PR modifiée après la revue' {
         Set-Pr @(@{ body = '<!-- auditor: sha=0000000aaaaaaa1111111bbbbbbb2222222ccccc verdict=approve -->' })
-        (Merge).Reason | Should -Match 'Relancer /audit-pr'
+        (Invoke-MergePr $script:Ok).Output | Should -Match 'Relancer /audit-pr'
     }
     It 'refuse une PR dont la dernière revue demande des changements' {
-        Set-Pr @(
-            @{ body = "<!-- auditor: sha=$($script:Head) verdict=approve -->" },
-            @{ body = "<!-- auditor: sha=$($script:Head) verdict=changes -->" })
-        (Merge).Decision | Should -Be 'deny'
+        Set-Pr @(@{ body = "<!-- auditor: sha=$($script:Head) verdict=approve -->" }, @{ body = "<!-- auditor: sha=$($script:Head) verdict=changes -->" })
+        (Invoke-MergePr $script:Ok).Code | Should -Be 1
     }
-    It 'refuse la fusion par un autre agent que git-ops' {
-        Set-Pr @(@{ body = "<!-- auditor: sha=$($script:Head) verdict=approve -->" })
-        (Invoke-Hook -Data (Bash 'gh pr merge 7' 'auditor') -Env @{ HARNESS_TEST_PR_JSON = $script:PrFile }).Decision | Should -Be 'deny'
-    }
-    It 'refuse un squash sans message explicite (--subject)' {
-        Set-Pr @(@{ body = "<!-- auditor: sha=$($script:Head) verdict=approve -->" })
-        (Merge '--squash').Reason | Should -Match 'subject'
-    }
-    It 'accepte une fusion --merge approuvée (release, hotfix)' {
-        Set-Pr @(@{ body = "<!-- auditor: sha=$($script:Head) verdict=approve -->" })
-        (Merge '--merge').Decision | Should -Be 'allow'
-    }
-    It 'lit le bon numéro de PR malgré des chiffres dans --subject' {
-        Set-Pr @(@{ body = "<!-- auditor: sha=$($script:Head) verdict=approve -->" })
-        $cmd = 'gh pr merge --squash --subject "feat(web): add 2 themes (#45)" 7'
-        (Invoke-Hook -Data (Bash $cmd 'git-ops') -Env @{ HARNESS_TEST_PR_JSON = $script:PrFile }).Decision | Should -Be 'allow'
-    }
-    It 'refuse une fusion sans numéro de PR explicite' {
-        Set-Pr @(@{ body = "<!-- auditor: sha=$($script:Head) verdict=approve -->" })
-        (Invoke-Hook -Data (Bash 'gh pr merge --squash --subject "fix: retry 3 times (#42)"' 'git-ops') -Env @{ HARNESS_TEST_PR_JSON = $script:PrFile }).Reason | Should -Match 'numéro de PR'
-    }
-    It 'ne prend pas un -r du sujet pour un rebase' {
-        Set-Pr @(@{ body = "<!-- auditor: sha=$($script:Head) verdict=approve -->" })
-        (Merge '--squash --subject "chore: drop -r flag (#7)"').Decision | Should -Be 'allow'
-    }
-    It 'ne prend pas un --subject cité dans --body pour un vrai --subject' {
-        Set-Pr @(@{ body = "<!-- auditor: sha=$($script:Head) verdict=approve -->" })
-        (Merge '--squash --body "add --subject next time"').Reason | Should -Match 'subject'
-    }
-    It 'refuse une fusion par rebase' {
-        Set-Pr @(@{ body = "<!-- auditor: sha=$($script:Head) verdict=approve -->" })
-        (Merge '--rebase').Decision | Should -Be 'deny'
+    It 'refuse si la PR lue n''est pas celle demandée' { Approve; (Invoke-MergePr @('-Pr', '8', '-Subject', 'feat(api): add export (#7)')).Code | Should -Be 1 }
+    It 'refuse une PR fermée' { Set-Pr @(@{ body = "<!-- auditor: sha=$($script:Head) verdict=approve -->" }) -State 'MERGED'; (Invoke-MergePr $script:Ok).Code | Should -Be 1 }
+    It 'exige -Subject en squash' { Approve; (Invoke-MergePr @('-Pr', '7')).Output | Should -Match 'Subject' }
+    It 'exige un -Subject en Conventional Commits avec numéro d''issue' { Approve; (Invoke-MergePr @('-Pr', '7', '-Subject', 'Ajout export')).Code | Should -Be 1 }
+    It 'accepte -Strategy merge sans -Subject (release, hotfix)' { Approve; (Invoke-MergePr @('-Pr', '7', '-Strategy', 'merge')).Code | Should -Be 0 }
+    It 'refuse une stratégie rebase' { Approve; (Invoke-MergePr @('-Pr', '7', '-Strategy', 'rebase')).Code | Should -Not -Be 0 }
+    It 'ne fusionne jamais pour de vrai avec des données simulées (sans mode essai)' {
+        Approve
+        $r = Invoke-MergePr $script:Ok -Env @{}
+        $r.Code | Should -Be 1
+        $r.Output | Should -Match 'HARNESS_TEST_DRYRUN'
     }
 }
 
@@ -244,19 +249,19 @@ Describe 'règles d''information' {
         # Copie jetable du harness dans un dépôt vide : le vrai hook Stop ne tourne jamais sur le
         # projet réel (il lancerait les vérifications des modules, dont des formateurs qui réécrivent).
         $copy = Join-Path ([IO.Path]::GetTempPath()) "harness-stop-$([guid]::NewGuid())"
-        New-Item -ItemType Directory -Force $copy | Out-Null
-        Copy-Item (Join-Path $script:Root '.harness') $copy -Recurse
-        git -C $copy init -q
-        $dir = Join-Path $copy 'backend' 'db' 'migrations'
-        New-Item -ItemType Directory -Force $dir | Out-Null
-        Set-Content (Join-Path $dir '0001.1.create-a.sql') 'SELECT 1;'
-        Set-Content (Join-Path $dir '0001.2.create-b.sql') 'SELECT 2;'
         try {
+            New-Item -ItemType Directory -Force $copy | Out-Null
+            Copy-Item (Join-Path $script:Root '.harness') $copy -Recurse
+            git -C $copy init -q
+            $dir = Join-Path $copy 'backend' 'db' 'migrations'
+            New-Item -ItemType Directory -Force $dir | Out-Null
+            Set-Content (Join-Path $dir '0001.1.create-a.sql') 'SELECT 1;'
+            Set-Content (Join-Path $dir '0001.2.create-b.sql') 'SELECT 2;'
             $r = Invoke-Hook -EventName 'Stop' -Data @{ stop_hook_active = $false } -Dispatch (Join-Path $copy '.harness' 'hooks' 'dispatch.ps1')
             $r.Decision | Should -Be 'deny'
             $r.Reason | Should -Match 'double'
         }
-        finally { Remove-Item $copy -Recurse -Force }
+        finally { if (Test-Path $copy) { Remove-Item $copy -Recurse -Force } }
     }
     It 'session-info annonce la version du harness' {
         (Invoke-Hook -EventName 'SessionStart' -Data @{ source = 'startup' }).Reason | Should -Match 'Harness'

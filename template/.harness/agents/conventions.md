@@ -35,7 +35,8 @@ scripts/       launch.ps1, test.ps1, lint.ps1, build.ps1, et db.ps1 si l'app a u
 
 - **Branches** : `feature/<n>-<slug>`, `fix/<n>-<slug>`, `release/x.y.z`, `hotfix/x.y.z`, où `<n>` est le numéro d'issue.
 - **Une PR = une issue**, cible : moins de 400 lignes modifiées (hors fichiers générés et lockfiles). Au-delà, l'issue est probablement à découper : le signaler.
-- **Fusion en squash** : un commit par feature dans la branche cible. Son message est **en anglais, en Conventional Commits**, et toujours **donné explicitement à la fusion** (`gh pr merge --squash --subject "feat(api): add PDF export for invoices (#42)"`) : sans ça, GitHub reprendrait le titre de la PR, qui est en français. Le hook `git-guard` refuse une fusion en squash sans `--subject`.
+- **Fusion en squash** : un commit par feature dans la branche cible. Son message est **en anglais, en Conventional Commits**, et toujours **donné explicitement à la fusion** : sans ça, GitHub reprendrait le titre de la PR, qui est en français.
+- **Toute fusion passe par `.harness/tools/merge-pr.ps1`** (réservé à `git-ops`) : `-Pr 42 -Subject "feat(api): add PDF export for invoices (#42)"`, ou `-Strategy merge` pour une branche `release/*` ou `hotfix/*`. Le script vérifie la revue `auditor` et ne fusionne que le commit revu. `gh pr merge` direct est refusé par `git-guard`.
 - **Commits** : Conventional Commits, en anglais, numéro d'issue en fin de titre.
   - Types : `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `build`, `ci`, `chore`, `revert`.
   - Scope : la brique concernée (`web`, `api`, `db`, `deploy`, `harness`…).
