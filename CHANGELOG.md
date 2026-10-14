@@ -2,6 +2,56 @@
 
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versions : [semver](https://semver.org/lang/fr/).
 
+## [0.2.0] - 2026-10-14
+
+Les conventions de code (phase 3 de la roadmap) et le système de modules.
+
+### Ajouté
+- **Système de modules** : question `modules` (`react`, `dotnet`, `python`, `game`). Chaque module installe `.harness/modules/<nom>/` (conventions, vérifications de fin de tour, blocs structurels), importé automatiquement par `core.md`.
+- **Conventions communes** (`.harness/agents/conventions.md`) : langues (code et Git en anglais, docs et suivi en français), i18n dès le départ, structure, branches, PR, Conventional Commits, ADR, tests, logs et OpenTelemetry, Problem Details, API tierces via le backend, accessibilité.
+- **Module `react`** : Vite, React 19 + React Compiler, TanStack Router et Query, Orval (`*.queries.ts`), react-hook-form + zod, shadcn, react-i18next, options `api` / `auth` / `google` / `realtime`, impersonation, Biome, Vitest + Testing Library + MSW, Playwright + axe.
+- **Module `dotnet`** : Controller → Service → Dal / Clients en projets séparés, database-first + migrations SQL DbUp, immuabilité, clients Refit + résilience standard + HybridCache, FluentValidation, `ICurrentUser`, permissions, impersonation, `analyzers.globalconfig`, xUnit v3 + Shouldly + NSubstitute.
+- **Module `python`** : petits modules FastAPI, traitements longs (file en processus, état SQLite, progression SSE), exposition `internal`, ruff + pyright.
+- **Module `game`** : serveur qui fait autorité, règles pures, salles avec file par salle, reconnexion, sauvegardes de partie versionnées.
+- **Subagent `db-ops`** (Haiku), avec le module `dotnet` : migrations locales et scaffolding EF.
+- **Skills** adaptés de dotnet/skills (MIT), avec le module `dotnet` : `dotnet-webapi`, `optimizing-ef-core-queries`.
+- **Plugins LSP** selon les modules : `csharp-lsp`, `typescript-lsp`, `pyright-lsp`.
+
+### Modifié
+- `git-ops` : messages de commit en anglais ; le message du commit fusionné est donné explicitement, en anglais (le titre de la PR reste en français).
+- **La fusion passe par `.harness/tools/merge-pr.ps1`**, réservé à `git-ops` : paramètres typés, revue `auditor` vérifiée, fusion du seul commit revu (`--match-head-commit`), squash avec message obligatoire ou `merge` pour une release. `git-guard` refuse tout `gh pr merge` direct.
+- `structural-watch` lit aussi les blocs structurels déclarés par les modules.
+- `stop-checks` voit les fichiers à l'intérieur d'un dossier non suivi (`--untracked-files=all`).
+- Chemins protégés : `backend/Directory.Build.props`, `tsconfig*.json`, `pyrightconfig.json`.
+- Copier refuse les combinaisons de modules incohérentes ; `tools/test.ps1` fonctionne par scénarios, dont un scénario invalide qui doit échouer.
+
+### Revue avant fusion
+La revue `auditor` de la PR #1 a relevé 7 constats importants et 15 mineurs, corrigés avant la fusion. Les principaux :
+- la vérification TypeScript ne compilait rien (`tsc -b`) ;
+- les règles de style .NET n'étaient pas évaluées au build (`EnforceCodeStyleInBuild`) ;
+- le module `game` contredisait les couches .NET ;
+- la licence MIT des skills adaptés était incomplète (fichier `LICENSE` ajouté) ;
+- les commits fusionnés auraient été en français.
+
+La deuxième revue a trouvé deux défauts introduits par ces corrections, eux aussi corrigés :
+- **`git-guard` pouvait vérifier la revue d'une autre PR** : il prenait le premier nombre de la commande, y compris dans le texte de `--subject`. La troisième revue a montré qu'aucune analyse de la ligne de commande ne serait fiable (échappements, commandes enchaînées, `--repo`) : la fusion directe est désormais interdite, au profit de `merge-pr.ps1` ;
+- **un test lançait le vrai hook `Stop` sur le projet réel** : il tourne désormais dans une copie jetable du harness.
+
+La quatrième revue a éprouvé `merge-pr.ps1` (18 commandes de contournement essayées sur le vrai hook) et relevé cinq points, corrigés :
+- seul le marqueur de revue posé par **le compte GitHub courant** compte (les dépôts sont publics), et `git-guard` refuse le marqueur à tout autre agent qu'`auditor`, y compris par `--body-file` ;
+- la règle `homelab` se juge sur l'URL de la PR lue (une variable `GH_REPO` ne la contourne plus), et le dépôt est imposé à `gh` ;
+- la branche n'est supprimée qu'en squash (une `release/*` doit encore aller dans `develop`) ;
+- `git-guard` retire les options globales de git (`-C`, `-c`, `--git-dir`…) avant l'analyse ;
+- toute écriture par `gh api` (`--method=`, `-f`, `-F`, `--input`, `graphql`) est réservée à l'utilisateur.
+
+La cinquième revue a relevé que `-R` / `--repo` de `gh` peut se placer avant la sous-commande (`gh pr -R x merge`) : il est désormais retiré avant l'analyse, comme les options globales de git. Dans la même passe :
+- `git -p` / `--paginate` sont vus, et un alias git défini en ligne (`-c alias.…`) est refusé ;
+- `gh api -X GET … -f` (une lecture) n'est plus refusé, et un champ collé (`-fclé=valeur`) est vu.
+
+Ce qu'aucun hook ne peut fermer (mot cité ou découpé, alias, `curl` avec un jeton) relève d'une protection côté GitHub : voir la roadmap de `services`, phase 10.
+
+En les corrigeant, un troisième défaut est apparu : **le doctor affichait vert alors qu'un fichier de tests ne pouvait pas s'exécuter**. Il signale désormais tout fichier ou bloc de tests en erreur.
+
 ## [0.1.1] - 2026-10-14
 
 ### Corrigé

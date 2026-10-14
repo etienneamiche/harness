@@ -1,0 +1,20 @@
+{
+  "name": "python",
+  "description": "Petit module Python : FastAPI, traitements longs, uv, ruff, pyright",
+  "stopChecks": [
+    {
+      "name": "ruff",
+      "files": "^backend/.*\\.py$",
+      "command": "uv run --directory backend ruff check --fix --quiet . ; if ($LASTEXITCODE -eq 0) { uv run --directory backend ruff format --quiet . }"
+    },
+    {
+      "name": "pyright",
+      "files": "^backend/.*\\.py$",
+      "command": "uv run --directory backend pyright"
+    }
+  ],
+  "structural": [
+    "^backend/(pyproject\\.toml|\\.python-version)$",
+    "^backend/src/[^/]+/(main|config|jobs)\\.py$"
+  ]
+}
