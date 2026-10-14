@@ -51,7 +51,9 @@
 {%- endif %}
   "enabledPlugins": {
     "ponytail@ponytail": true{% if 'dotnet' in modules %},
-    "csharp-lsp@claude-plugins-official": true{% endif %}
+    "csharp-lsp@claude-plugins-official": true{% endif %}{% if 'python' in modules %},
+    "pyright-lsp@claude-plugins-official": true{% endif %}{% if 'react' in modules %},
+    "typescript-lsp@claude-plugins-official": true{% endif %}
   },
   "extraKnownMarketplaces": {
     "ponytail": { "source": { "source": "github", "repo": "DietrichGebert/ponytail" } }
