@@ -8,6 +8,7 @@ BeforeDiscovery {
     # Certains tests dépendent du type de dépôt (gitflow ou non) : on lit sa config.
     $cfg = Get-Content (Join-Path $PSScriptRoot '..' 'harness.json') -Raw | ConvertFrom-Json
     $Gitflow = [bool] $cfg.requireIssueRef
+    $HasReact = Test-Path (Join-Path $PSScriptRoot '..' 'modules' 'react')
 }
 
 BeforeAll {
@@ -198,6 +199,9 @@ Describe 'règles d''information' {
     }
     It 'structural-watch signale un bloc structurel' {
         (Invoke-Hook -EventName 'PostToolUse' -Data (Tool 'Edit' @{ file_path = (Join-Path $script:Root 'scripts/launch.ps1') })).Reason | Should -Match '/upstream'
+    }
+    It 'structural-watch lit aussi les blocs déclarés par les modules' -Skip:(-not $HasReact) {
+        (Invoke-Hook -EventName 'PostToolUse' -Data (Tool 'Edit' @{ file_path = (Join-Path $script:Root 'frontend/vite.config.ts') })).Reason | Should -Match '/upstream'
     }
     It 'session-info annonce la version du harness' {
         (Invoke-Hook -EventName 'SessionStart' -Data @{ source = 'startup' }).Reason | Should -Match 'Harness'

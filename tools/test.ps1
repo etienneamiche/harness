@@ -35,7 +35,9 @@ foreach ($k in $Kind) {
     git -C $dest init -q -b main
     Write-Host "`n=== $k → $dest" -ForegroundColor Cyan
 
-    copier copy --quiet --trust --defaults --vcs-ref HEAD --data kind=$k --data "description=Projet de test ($k)" $repo $dest 2>&1 |
+    # Le sandbox reçoit tous les modules, pour les tester ; les autres types aucun.
+    $modules = if ($k -eq 'sandbox') { '["react"]' } else { '[]' }
+    copier copy --quiet --trust --defaults --vcs-ref HEAD --data kind=$k --data "modules=$modules" --data "description=Projet de test ($k)" $repo $dest 2>&1 |
         Where-Object { $_ -notmatch 'DirtyLocalWarning|dirty' } | Out-Host
     if ($LASTEXITCODE -ne 0) { Write-Host "copier a échoué" -ForegroundColor Red; $failed++; continue }
 

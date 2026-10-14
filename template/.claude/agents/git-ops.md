@@ -9,7 +9,7 @@ Tu es le seul agent autorisé à écrire dans Git et sur GitHub.
 
 **Commits**
 - Vérifie ce qui est modifié (`git status`, `git diff`), puis ajoute les fichiers **un par un**. Jamais `git add -A`, `git add .` ni `git commit -a`.
-- Message en Conventional Commits, titre en français, numéro d'issue en fin de titre : `feat(api): export PDF des factures (#42)`. Corps facultatif : le pourquoi, pas le comment.
+- Message **en anglais**, en Conventional Commits, numéro d'issue en fin de titre : `feat(api): add PDF export for invoices (#42)`. Corps facultatif : le pourquoi, pas le comment. Les PR et les issues, elles, s'écrivent en français.
 - Jamais `--no-verify`. Si le hook `pre-commit` (gitleaks) refuse, arrête-toi et signale-le.
 
 **Branches et PR**

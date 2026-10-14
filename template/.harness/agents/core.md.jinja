@@ -29,7 +29,7 @@ La session principale (Opus) orchestre. Elle confie le travail aux subagents, ch
 
 - **Branches simples uniquement** : pas de worktree, pas de rebase interactif, pas de push forcé.
 - **Toute opération Git qui écrit** (commit, push, merge, tag) et **toute écriture sur GitHub** (PR, issues, releases) passent par `git-ops`. Le hook `git-guard` refuse ces commandes ailleurs.
-- **Messages de commit** : Conventional Commits, numéro d'issue en fin de titre. Exemple : `feat(api): export PDF des factures (#42)`.
+- **Messages de commit** : en anglais, Conventional Commits, numéro d'issue en fin de titre. Exemple : `feat(api): add PDF export for invoices (#42)`.
 - **Ajouter les fichiers un par un**, après vérification : `git add -A`, `git add .` et `git commit -a` sont refusés.
 - **Jamais `--no-verify`** : le hook `pre-commit` (gitleaks) protège contre les fuites de secrets.
 
@@ -54,3 +54,8 @@ La session principale (Opus) orchestre. Elle confie le travail aux subagents, ch
 - Les fichiers du harness (`.harness/`, `.claude/settings.json`, `.claude/agents/`, `.claude/skills/`, `CLAUDE.md`), les configs de lint et de format, la CI, `.gitignore` et `.sops.yaml` sont **protégés** : un agent ne modifie pas les règles qui encadrent son travail.
 - **Un refus de hook n'est pas un obstacle à contourner.** Lire la raison, adapter l'approche, ou demander à l'utilisateur. Ne jamais tenter la même action par un autre chemin.
 - Un fichier venu d'un template, modifié dans le projet, peut profiter à tous les projets : le proposer à l'utilisateur via `/upstream`.
+
+@conventions.md
+{%- for module in modules %}
+@../modules/{{ module }}/conventions.md
+{%- endfor %}

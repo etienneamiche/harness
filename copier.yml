@@ -37,6 +37,16 @@ kind:
     "Template": template
     "Infrastructure (homelab)": infra
 
+modules:
+  type: str
+  help: Stacks présentes dans le dépôt (conventions, vérifications de fin de tour)
+  multiselect: true
+  default: []
+  choices:
+    - react
+    - dotnet
+    - python
+
 hook_profile:
   type: str
   help: Sévérité des hooks
