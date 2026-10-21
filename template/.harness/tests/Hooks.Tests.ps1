@@ -49,6 +49,7 @@ BeforeAll {
         $d
     }
     function Bash([string] $Command, [string] $Agent = '') { Tool 'Bash' @{ command = $Command } $Agent }
+    function PowerShell([string] $Command, [string] $Agent = '') { Tool 'PowerShell' @{ command = $Command } $Agent }
 
     # Faux secrets construits à l'exécution : rien de détectable n'est écrit dans le dépôt.
     function New-FakeToken([string] $Prefix, [int] $Length) {
@@ -209,6 +210,20 @@ Describe 'git-guard : le texte d''un message n''est pas une option' {
     It 'voit la sous-commande git derrière --% de pwsh, pour les opérations réservées' {
         (Invoke-Hook -Data (Bash "git --% commit -m 'feat: x (#1)'" 'dev')).Decision | Should -Be 'deny'
     }
+    It 'accepte un chemin Windows entre guillemets doubles (<label>)' -ForEach @(
+        @{ label = 'git -C'; cmd = 'git -C "C:\repo\app" commit -m "feat(scripts): add -Days (#16)"' }
+        @{ label = 'cd'; cmd = 'cd "C:\repo\app" && git commit -m "feat(scripts): add -Days (#16)"' }
+    ) {
+        (Invoke-Hook -Data (Bash $cmd 'git-ops')).Decision | Should -Be 'allow'
+        (Invoke-Hook -Data (PowerShell $cmd 'git-ops')).Decision | Should -Be 'allow'
+    }
+    It 'refuse un \ qui échappe, dans une chaîne' {
+        (Invoke-Hook -Data (Bash 'git commit -m "x\" -a "y"' 'git-ops')).Decision | Should -Be 'deny'
+    }
+    It 'refuse une option derrière --%, avec l''outil PowerShell (<cmd>)' -ForEach @(
+        @{ cmd = "git --% commit -m 'feat: x (#16) -a'" }, @{ cmd = 'git --% commit "-a" -m x' },
+        @{ cmd = 'git --% push origin x "--force"' }, @{ cmd = "git -C . --% commit --no-verify -m 'x'" }
+    ) { (Invoke-Hook -Data (PowerShell $cmd 'git-ops')).Decision | Should -Be 'deny' }
     It 'garde un chemin Windows sans masquer la suite' {
         (Invoke-Hook -Data (Bash 'git -C C:\repo\app commit -m "feat(scripts): add -Days (#5)"' 'git-ops')).Decision | Should -Be 'allow'
         (Invoke-Hook -Data (Bash 'git -C C:\repo\app commit -a -m "feat: x (#5)"' 'git-ops')).Decision | Should -Be 'deny'

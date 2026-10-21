@@ -38,7 +38,8 @@
         # Texte que bash ET pwsh traitent à coup sûr comme littéral : on peut le retirer de l'analyse.
         # Ce qui est retiré, en lisant la commande de gauche à droite :
         #  - une chaîne '…' fermée sur la même ligne ;
-        #  - une chaîne "…" fermée sur la même ligne, sans $, ` ni \ (ni substitution ni échappement) ;
+        #  - une chaîne "…" fermée sur la même ligne, sans $ ni `, et dont chaque \ précède un caractère de
+        #    chemin (C:\repo\app) : ni substitution ni échappement, pour bash comme pour pwsh ;
         #  - le corps d'un heredoc à délimiteur cité (<<'EOF', <<"EOF" : bash n'y substitue rien) ;
         #  - le corps d'une here-string @'…'@ sans apostrophe.
         # Au premier passage ambigu (guillemet non fermé ou non littéral, heredoc non cité, here-string
@@ -77,7 +78,7 @@
                 }
                 elseif ($c -eq '`' -or [string] $c -match $smart -or $c -eq '#') { $rest = $true }
                 elseif ($c -eq '$' -and $i + 1 -lt $n -and ($s[$i + 1] -eq "'" -or $s[$i + 1] -eq '"')) { $rest = $true }
-                elseif ($c -eq '-' -and $s.Substring($i).StartsWith('--%')) { [void] $out.Append(' ' + $s.Substring($i + 3)); break }
+                elseif ($c -eq '-' -and $s.Substring($i).StartsWith('--%')) { [void] $out.Append(' ' + $s.Substring($i + 3).Replace('"', '')); break }
                 elseif ($c -eq '<' -and $s.Substring($i).StartsWith('<#')) { $rest = $true }
                 elseif ($c -eq '<' -and $s.Substring($i).StartsWith('<<<')) { [void] $out.Append('<<<'); $i += 3; continue }
                 elseif ($c -eq '<' -and $s.Substring($i).StartsWith('<<')) {
@@ -95,7 +96,7 @@
                 elseif ($c -eq "'" -or $c -eq '"') {
                     $close = $s.IndexOf($c, $i + 1)
                     $content = if ($close -gt $i -and $close -lt $eol) { $s.Substring($i + 1, $close - $i - 1) } else { $null }
-                    $literal = $null -ne $content -and $content -notmatch $smart -and ($c -eq "'" -or $content -notmatch '[$`\\]')
+                    $literal = $null -ne $content -and $content -notmatch $smart -and ($c -eq "'" -or ($content -notmatch '[$`]' -and $content -notmatch '\\(?![\w./:-])'))
                     if ($literal) {
                         $isMessage = $out.ToString() -match '(^|\s)(-m|--message)(\s+|=)$'
                         if ($content -match '^(-{1,2}[\w-]+(=\S*)?|\.|\+\S+)$' -and -not $isMessage) { [void] $out.Append($content) } else { [void] $out.Append("''") }
