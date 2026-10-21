@@ -6,6 +6,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versions : [s
 
 ### Ajouté
 - **Skill `/audit-pr`** : la revue complète d'une PR avant sa fusion, confiée à `auditor`, qui publie son verdict en commentaire. Le skill distingue le premier passage de la revue après corrections, prépare la copie locale, et propose un mode essai qui ne publie rien. Son guide (`references/review-guide.md`) fixe la méthode, la gravité, le format du commentaire et la publication du marqueur.
+- **`.harness/tools/board.ps1`**, réservé à `git-ops` : place la carte d'une issue dans une colonne du Project « services », et l'y ajoute si besoin.
 - **Modèles d'issue et de PR** (`.github/`) : `feature` et `bug`, avec leurs critères d'acceptation, et un modèle de PR que remplit `/ship`.
 
 ### Modifié

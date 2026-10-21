@@ -57,7 +57,7 @@ ARCHITECTURE.md              au projet (jamais écrasé)
   hooks/dispatch.ps1         point d'entrée unique des hooks
   hooks/rules/<Événement>/   une règle par fichier
   githooks/pre-commit        gitleaks + noms de fichiers secrets
-  tools/                     post-install, doctor, manifeste, merge-pr (seul chemin de fusion)
+  tools/                     post-install, doctor, manifeste, merge-pr (seul chemin de fusion), board (carte sur le Project)
   tests/                     autotests Pester des hooks
 ```
 

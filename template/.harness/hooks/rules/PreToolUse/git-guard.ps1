@@ -9,8 +9,8 @@
     Run      = {
         param($ctx)
         $cmd = Get-Value $ctx.ToolInput 'command' ''
-        # merge-pr.ps1 ne contient ni « git » ni « gh » : il doit quand même passer par les règles.
-        if ($cmd -notmatch '\b(git|gh)\b|merge-pr\.ps1') { return }
+        # merge-pr.ps1 et board.ps1 ne contiennent ni « git » ni « gh » : ils doivent quand même passer par les règles.
+        if ($cmd -notmatch '\b(git|gh)\b|(merge-pr|board)\.ps1') { return }
         # Options globales de git (-C dossier, -c clé=valeur, --git-dir…) retirées avant l'analyse :
         # `git -C x push` reste un `git push`. Le dossier visé sert à lire la branche courante.
         $gitDir = $ctx.Cwd
