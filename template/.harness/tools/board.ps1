@@ -36,7 +36,7 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 function Fail([string] $Message) { Write-Host "board : $Message" -ForegroundColor Red; exit 1 }
 
-# Chaque lecture gh est vérifiée : une sortie vide ne doit jamais passer pour « rien trouvé ».
+# Chaque appel gh en échec arrête le script : une lecture ratée ne doit jamais passer pour « rien trouvé ».
 function Get-GhJson([string[]] $GhArgs) {
     $out = gh @GhArgs
     if ($LASTEXITCODE -ne 0) { Fail "échec de : gh $($GhArgs -join ' ')" }
@@ -56,6 +56,7 @@ if (-not $board) { Fail "aucun Project « $Project » ouvert chez $owner : le cr
 
 $field = (Get-GhJson 'project', 'field-list', $board.number, '--owner', $owner, '--format', 'json').fields |
     Where-Object name -eq 'Status' | Select-Object -First 1
+if (-not $field) { Fail "le Project « $Project » n'a pas de champ Status : le recréer avec scripts/github-setup.ps1 (racine services)." }
 $option = @($field.options) | Where-Object name -eq $Status | Select-Object -First 1
 if (-not $option) { Fail "le Project « $Project » n'a pas de colonne « $Status » (colonnes : $(@($field.options.name) -join ', '))." }
 

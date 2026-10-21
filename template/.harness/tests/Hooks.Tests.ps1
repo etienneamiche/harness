@@ -141,12 +141,26 @@ Describe 'board.ps1 : carte d''une issue sur le Project' {
         $LASTEXITCODE | Should -Not -Be 0
         $out | Should -Match 'Status'
     }
-    It 'refuse un numéro d''issue invalide et un -Repo mal formé' {
-        pwsh -NoProfile -NonInteractive -File $script:BoardScript -Issue 0 -Status 'Fait' -Repo 'o/r' 2>&1 | Out-Null
+    It 'refuse un numéro d''issue invalide et un -Repo mal formé (<param>)' -ForEach @(
+        @{ param = 'Issue'; issue = 0; repo = 'o/r' }, @{ param = 'Repo'; issue = 7; repo = 'pas un dépôt' }
+    ) {
+        $out = pwsh -NoProfile -NonInteractive -File $script:BoardScript -Issue $issue -Status 'Fait' -Repo $repo 2>&1 | Out-String
         $LASTEXITCODE | Should -Not -Be 0
-        pwsh -NoProfile -NonInteractive -File $script:BoardScript -Issue 7 -Status 'Fait' -Repo 'pas un dépôt' 2>&1 | Out-Null
-        $LASTEXITCODE | Should -Not -Be 0
+        $out | Should -Match $param
     }
+    It 'ne confond pas un autre script avec board.ps1 (<cmd>)' -ForEach @(
+        @{ cmd = 'pwsh -NoProfile -File scripts/dashboard.ps1' }, @{ cmd = 'pwsh -File tools/leaderboard.ps1 -Top 5' }, @{ cmd = './scripts/storyboard.ps1' }
+    ) { (Invoke-Hook -Data (Bash $cmd 'dev')).Decision | Should -Be 'allow' }
+    It 'réserve les écritures gh project à git-ops (<cmd>)' -ForEach @(
+        @{ cmd = 'gh project item-edit --id X --project-id Y --field-id Z --single-select-option-id W' },
+        @{ cmd = 'gh project item-add 1 --owner o --url https://github.com/o/r/issues/7' }
+    ) {
+        (Invoke-Hook -Data (Bash $cmd 'dev')).Decision | Should -Be 'deny'
+        (Invoke-Hook -Data (Bash $cmd 'git-ops')).Decision | Should -Be 'allow'
+    }
+    It 'laisse lire le Project (<cmd>)' -ForEach @(
+        @{ cmd = 'gh project list --owner o' }, @{ cmd = 'gh project item-list 1 --owner o --format json' }
+    ) { (Invoke-Hook -Data (Bash $cmd 'dev')).Decision | Should -Be 'allow' }
 }
 
 Describe 'git-guard : contournements connus' {
