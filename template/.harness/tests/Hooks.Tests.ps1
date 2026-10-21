@@ -163,6 +163,25 @@ Describe 'board.ps1 : carte d''une issue sur le Project' {
     ) { (Invoke-Hook -Data (Bash $cmd 'dev')).Decision | Should -Be 'allow' }
 }
 
+Describe 'git-guard : le texte d''un message n''est pas une option' {
+    It 'accepte un message qui parle d''options (<label>)' -ForEach @(
+        @{ label = '-m'; cmd = 'git commit -m "feat(scripts): add -Days and -WhatIf to clean-exports (#5)"' }
+        @{ label = 'heredoc'; cmd = "git commit -F - <<'EOF'`nfeat(scripts): clean up old exports (#5)`n`nDeletes the CSV older than -Days days; -WhatIf lists them.`nNever use --no-verify or git add -A.`nEOF" }
+        @{ label = 'here-string'; cmd = "git commit -m @'`nfeat(scripts): clean up old exports (#5)`n`n-Path and -All are optional.`n'@" }
+        @{ label = 'apostrophes'; cmd = "git commit -m 'fix(api): handle -a in names (#3)'" }
+    ) { (Invoke-Hook -Data (Bash $cmd 'git-ops')).Decision | Should -Be 'allow' }
+    It 'refuse toujours git commit -a hors du texte cité (<cmd>)' -ForEach @(
+        @{ cmd = 'git commit -a -m "feat: x (#1)"' }, @{ cmd = 'git commit -am "feat: x (#1)"' },
+        @{ cmd = 'git commit --all -m "feat: x (#1)"' }, @{ cmd = 'git commit -m "feat: x (#1)" -a' }
+    ) { (Invoke-Hook -Data (Bash $cmd 'git-ops')).Reason | Should -Match 'commit -a' }
+    It 'refuse toujours --no-verify hors du texte cité' {
+        (Invoke-Hook -Data (Bash 'git commit --no-verify -m "feat: x (#1)"' 'git-ops')).Reason | Should -Match 'no-verify'
+    }
+    It 'voit une option seule entre guillemets (<cmd>)' -ForEach @(
+        @{ cmd = 'git commit "--no-verify" -m "feat: x (#1)"' }, @{ cmd = "git commit '-a' -m 'feat: x (#1)'" }, @{ cmd = 'git add "."' }
+    ) { (Invoke-Hook -Data (Bash $cmd 'git-ops')).Decision | Should -Be 'deny' }
+}
+
 Describe 'git-guard : contournements connus' {
     It 'voit un git push derrière les options globales de git (<cmd>)' -Skip:(-not $Gitflow) -ForEach @(
         @{ cmd = 'git -C ../autre push origin main' }, @{ cmd = 'git -c core.hooksPath=/dev/null push origin develop' },

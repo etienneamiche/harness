@@ -27,17 +27,24 @@
         $config = $ctx.Config
         $who = if ($agent) { "l'agent '$agent'" } else { 'la session principale' }
 
-        # 1. Interdits pour tout le monde.
+        # 1. Interdits pour tout le monde. Ils portent sur les options de la commande, pas sur le texte
+        # qu'elle transporte : sans le texte cité ni le corps des heredocs et here-strings, un message de
+        # commit qui parle de `-Days` ou de `--no-verify` ne passe pas pour une option.
+        $bare = [regex]::Replace($cmd, '(?ms)<<-?\s*([''"]?)(\w+)\1[^\n]*\n.*?^\s*\2\s*$', '<<heredoc')
+        $bare = [regex]::Replace($bare, '(?s)@([''"])\r?\n.*?\r?\n\1@', "''")
+        # Une option seule entre guillemets (`"--no-verify"`, `'-a'`, `"."`) reste une option : on la remet en clair.
+        $bare = [regex]::Replace($bare, '(["''])(-{1,2}[\w-]+|\.|\+\S+)\1', '$2')
+        $bare = [regex]::Replace($bare, '"(?:[^"\\`]|[\\`].)*"|''[^'']*''', "''")
         $forbidden = [ordered]@{
             'git\s+worktree\b'                                   = 'les worktrees sont interdits : on travaille par branches simples.'
             'git\s+rebase\b[^;&|]*\s(-i|--interactive)\b'        = 'le rebase interactif est interdit.'
             'git\s+push\b[^;&|]*(\s--force(-with-lease)?\b|\s-f\b|\s\+\S)' = 'le push forcé est interdit.'
             '--no-verify\b'                                      = 'contourner les hooks Git (--no-verify) est interdit.'
             'git\s+add\b[^;&|]*\s(-A|--all|\.)(?=\s|$|;|&|\|)'   = "git add -A / git add . sont interdits : ajouter les fichiers un par un, après les avoir vérifiés."
-            'git\s+commit\b[^;&|]*\s-(?!-)[a-zA-Z]*a'            = "git commit -a est interdit : ajouter les fichiers un par un."
+            'git\s+commit\b[^;&|]*\s(-(?!-)[a-zA-Z]*a|--all\b)' = "git commit -a est interdit : ajouter les fichiers un par un."
         }
         foreach ($pattern in $forbidden.Keys) {
-            if ($cmd -cmatch $pattern) { return @{ Decision = 'deny'; Reason = $forbidden[$pattern] } }
+            if ($bare -cmatch $pattern) { return @{ Decision = 'deny'; Reason = $forbidden[$pattern] } }
         }
 
         # 2. Opérations réservées : classe d'opération → agents autorisés.
