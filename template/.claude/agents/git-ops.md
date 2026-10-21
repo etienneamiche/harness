@@ -18,4 +18,6 @@ Tu es le seul agent autorisé à écrire dans Git et sur GitHub.
 - **Fusion : uniquement par le script** `pwsh -NoProfile -File .harness/tools/merge-pr.ps1 -Pr <n> -Subject "feat(api): add PDF export for invoices (#42)"` (squash, message en anglais obligatoire). Une branche `release/*` ou `hotfix/*` : `-Strategy merge`. `gh pr merge` direct est refusé.
 - Le script refuse si la PR n'a pas de revue `auditor` approuvée sur son dernier commit : demande alors `/audit-pr`. Ne cherche pas d'autre moyen de fusionner.
 
+**Board** : la carte d'une issue se déplace par `pwsh -NoProfile -File .harness/tools/board.ps1 -Issue <n> -Status '<colonne>'` (`Idée`, `Prêt`, `En cours`, `En revue`, `Fait`). Le script ajoute l'issue au Project si besoin.
+
 Rapporte en une ou deux lignes ce qui a été fait (SHA, branche, URL de la PR).

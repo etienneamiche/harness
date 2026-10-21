@@ -125,6 +125,44 @@ Describe 'git-guard : fusion uniquement par merge-pr.ps1' {
     }
 }
 
+Describe 'board.ps1 : carte d''une issue sur le Project' {
+    BeforeAll { $script:BoardScript = Join-Path $script:Root '.harness' 'tools' 'board.ps1' }
+    It 'réserve board.ps1 à git-ops' {
+        (Invoke-Hook -Data (Bash "pwsh -NoProfile -File .harness/tools/board.ps1 -Issue 7 -Status 'En revue'" 'dev')).Decision | Should -Be 'deny'
+        (Invoke-Hook -Data (Bash "pwsh -NoProfile -File .harness/tools/board.ps1 -Issue 7 -Status 'En revue'")).Decision | Should -Be 'deny'
+    }
+    It 'laisse git-ops lancer board.ps1' {
+        (Invoke-Hook -Data (Bash "pwsh -NoProfile -File .harness/tools/board.ps1 -Issue 7 -Status 'En revue'" 'git-ops')).Decision | Should -Be 'allow'
+    }
+    It 'refuse un statut hors des cinq colonnes, avant tout appel à gh (<status>)' -ForEach @(
+        @{ status = 'Done' }, @{ status = 'En attente' }
+    ) {
+        $out = pwsh -NoProfile -NonInteractive -File $script:BoardScript -Issue 7 -Status $status -Repo 'o/r' 2>&1 | Out-String
+        $LASTEXITCODE | Should -Not -Be 0
+        $out | Should -Match 'Status'
+    }
+    It 'refuse un numéro d''issue invalide et un -Repo mal formé (<param>)' -ForEach @(
+        @{ param = 'Issue'; issue = 0; repo = 'o/r' }, @{ param = 'Repo'; issue = 7; repo = 'pas un dépôt' }
+    ) {
+        $out = pwsh -NoProfile -NonInteractive -File $script:BoardScript -Issue $issue -Status 'Fait' -Repo $repo 2>&1 | Out-String
+        $LASTEXITCODE | Should -Not -Be 0
+        $out | Should -Match $param
+    }
+    It 'ne confond pas un autre script avec board.ps1 (<cmd>)' -ForEach @(
+        @{ cmd = 'pwsh -NoProfile -File scripts/dashboard.ps1' }, @{ cmd = 'pwsh -File tools/leaderboard.ps1 -Top 5' }, @{ cmd = './scripts/storyboard.ps1' }
+    ) { (Invoke-Hook -Data (Bash $cmd 'dev')).Decision | Should -Be 'allow' }
+    It 'réserve les écritures gh project à git-ops (<cmd>)' -ForEach @(
+        @{ cmd = 'gh project item-edit --id X --project-id Y --field-id Z --single-select-option-id W' },
+        @{ cmd = 'gh project item-add 1 --owner o --url https://github.com/o/r/issues/7' }
+    ) {
+        (Invoke-Hook -Data (Bash $cmd 'dev')).Decision | Should -Be 'deny'
+        (Invoke-Hook -Data (Bash $cmd 'git-ops')).Decision | Should -Be 'allow'
+    }
+    It 'laisse lire le Project (<cmd>)' -ForEach @(
+        @{ cmd = 'gh project list --owner o' }, @{ cmd = 'gh project item-list 1 --owner o --format json' }
+    ) { (Invoke-Hook -Data (Bash $cmd 'dev')).Decision | Should -Be 'allow' }
+}
+
 Describe 'git-guard : contournements connus' {
     It 'voit un git push derrière les options globales de git (<cmd>)' -Skip:(-not $Gitflow) -ForEach @(
         @{ cmd = 'git -C ../autre push origin main' }, @{ cmd = 'git -c core.hooksPath=/dev/null push origin develop' },
