@@ -9,6 +9,7 @@
     Run      = {
         param($ctx)
         $cmd = Get-Value $ctx.ToolInput 'command' ''
+        $raw = $cmd
         # merge-pr.ps1 et board.ps1 ne contiennent ni « git » ni « gh » : ils doivent quand même passer par les règles.
         if ($cmd -notmatch '\b(git|gh)\b|(?<![\w.-])(merge-pr|board)\.ps1') { return }
         # Options globales de git (-C dossier, -c clé=valeur, --git-dir…) retirées avant l'analyse :
@@ -19,10 +20,15 @@
         if ($cmd -match '\bgit\b[^;&|]*\s-c\s*["'']?alias\.') {
             return @{ Decision = 'deny'; Reason = "pas d'alias git défini dans la commande (-c alias.…) : écrire la sous-commande en clair." }
         }
-        # Toute option placée avant la sous-commande est retirée (celles qui prennent une valeur avec elle).
-        $cmd = [regex]::Replace($cmd, '\bgit((\s+(-C|-c|--git-dir|--work-tree|--namespace|--exec-path|--config-env|--super-prefix)(=|\s+)("[^"]*"|''[^'']*''|\S+))|(\s+--?[A-Za-z][\w-]*(=\S+)?)|(\s+--%))+', 'git')
-        # Même chose pour gh : -R / --repo peut se placer avant ou après le groupe (`gh pr -R x merge`).
-        $cmd = [regex]::Replace($cmd, '(?<=\bgh\b[^;&|\n]*)\s(-R|--repo)(=|\s+)("[^"]*"|''[^'']*''|\S+)', '')
+        # Toute option placée avant la sous-commande est retirée (celles qui prennent une valeur avec elle,
+        # et --% de pwsh) : `git -C x --% push` reste un `git push`. Même chose pour gh : -R / --repo peut
+        # se placer avant ou après le groupe (`gh pr -R x merge`).
+        $normalize = {
+            param([string] $t)
+            $t = [regex]::Replace($t, '\bgit((\s+(-C|-c|--git-dir|--work-tree|--namespace|--exec-path|--config-env|--super-prefix)(=|\s+)("[^"]*"|''[^'']*''|\S+))|(\s+--?[A-Za-z][\w-]*(=\S+)?)|(\s+--%))+', 'git')
+            [regex]::Replace($t, '(?<=\bgh\b[^;&|\n]*)\s(-R|--repo)(=|\s+)("[^"]*"|''[^'']*''|\S+)', '')
+        }
+        $cmd = & $normalize $cmd
         $agent = $ctx.AgentType
         $config = $ctx.Config
         $who = if ($agent) { "l'agent '$agent'" } else { 'la session principale' }
@@ -40,7 +46,8 @@
         # typographique), tout le reste de la commande est recopié tel quel : les deux shells pourraient
         # ne plus découper pareil, et une commande masquée à tort serait un contournement. Dans le doute,
         # le texte reste visible (au pire, un refus de trop). Une option seule entre guillemets
-        # ("--no-verify", '-a', ".") reste une option, sauf comme valeur de -m / --message.
+        # ("--no-verify", '-a', ".", '--force-with-lease=x') reste une option, sauf comme valeur de -m / --message.
+        # --% (pwsh) passe la suite telle quelle à git : il est remplacé par une espace, et la suite reste visible.
         function Get-BareCommand([string] $s) {
             $out = [Text.StringBuilder]::new()
             $smart = '[\u2018-\u201F]'
@@ -69,11 +76,12 @@
                     $rest = $true
                 }
                 elseif ($c -eq '`' -or [string] $c -match $smart -or $c -eq '#') { $rest = $true }
-                elseif ($c -eq '-' -and $s.Substring($i).StartsWith('--%')) { $rest = $true }
+                elseif ($c -eq '$' -and $i + 1 -lt $n -and ($s[$i + 1] -eq "'" -or $s[$i + 1] -eq '"')) { $rest = $true }
+                elseif ($c -eq '-' -and $s.Substring($i).StartsWith('--%')) { [void] $out.Append(' ' + $s.Substring($i + 3)); break }
                 elseif ($c -eq '<' -and $s.Substring($i).StartsWith('<#')) { $rest = $true }
                 elseif ($c -eq '<' -and $s.Substring($i).StartsWith('<<<')) { [void] $out.Append('<<<'); $i += 3; continue }
                 elseif ($c -eq '<' -and $s.Substring($i).StartsWith('<<')) {
-                    if ($s.Substring($i) -match '^<<-?[ \t]*([''"])(\w+)\1') {
+                    if ($s.Substring($i) -match '^<<-?[ \t]*([''"])(\w+)\1(?=[\s;|&)<>]|$)') {
                         $heredocs.Enqueue($Matches[2]); [void] $out.Append($Matches[0]); $i += $Matches[0].Length; continue
                     }
                     $rest = $true
@@ -90,7 +98,7 @@
                     $literal = $null -ne $content -and $content -notmatch $smart -and ($c -eq "'" -or $content -notmatch '[$`\\]')
                     if ($literal) {
                         $isMessage = $out.ToString() -match '(^|\s)(-m|--message)(\s+|=)$'
-                        if ($content -match '^(-{1,2}[\w-]+|\.|\+\S+)$' -and -not $isMessage) { [void] $out.Append($content) } else { [void] $out.Append("''") }
+                        if ($content -match '^(-{1,2}[\w-]+(=\S*)?|\.|\+\S+)$' -and -not $isMessage) { [void] $out.Append($content) } else { [void] $out.Append("''") }
                         $i = $close + 1; continue
                     }
                     $rest = $true
@@ -100,7 +108,7 @@
             }
             $out.ToString()
         }
-        $bare = Get-BareCommand $cmd
+        $bare = & $normalize (Get-BareCommand $raw)
         $forbidden = [ordered]@{
             'git\s+worktree\b'                                   = 'les worktrees sont interdits : on travaille par branches simples.'
             'git\s+rebase\b[^;&|]*\s(-i|--interactive)\b'        = 'le rebase interactif est interdit.'

@@ -201,7 +201,14 @@ Describe 'git-guard : le texte d''un message n''est pas une option' {
         @{ label = 'chaîne pwsh sur plusieurs lignes'; cmd = "echo `"`$x`n`" ; git push --force origin x ; `"z`"" }
         @{ label = 'substitution dans un heredoc non cité'; cmd = "cat <<EOF`n'`$(git push --force origin x)'`nEOF" }
         @{ label = 'stop-parsing pwsh'; cmd = "git --% commit -a -m 'x'" }
+        @{ label = 'stop-parsing pwsh, option dans une apostrophe'; cmd = "git --% commit -m 'x --no-verify'" }
+        @{ label = 'chaîne bash $''…'' avec \'''; cmd = "git commit -m `$'x\'' --no-verify -m ''" }
+        @{ label = 'délimiteur de heredoc à moitié cité'; cmd = "cat <<'E'OF`nx`nEOF`ngit push --force origin main`nE" }
+        @{ label = 'option entre guillemets avec sa valeur'; cmd = "git push '--force-with-lease=main' origin main" }
     ) { (Invoke-Hook -Data (Bash $cmd 'dev')).Decision | Should -Be 'deny' }
+    It 'voit la sous-commande git derrière --% de pwsh, pour les opérations réservées' {
+        (Invoke-Hook -Data (Bash "git --% commit -m 'feat: x (#1)'" 'dev')).Decision | Should -Be 'deny'
+    }
     It 'garde un chemin Windows sans masquer la suite' {
         (Invoke-Hook -Data (Bash 'git -C C:\repo\app commit -m "feat(scripts): add -Days (#5)"' 'git-ops')).Decision | Should -Be 'allow'
         (Invoke-Hook -Data (Bash 'git -C C:\repo\app commit -a -m "feat: x (#5)"' 'git-ops')).Decision | Should -Be 'deny'
