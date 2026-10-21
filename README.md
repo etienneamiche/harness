@@ -49,6 +49,7 @@ ARCHITECTURE.md              au projet (jamais écrasé)
 .gitleaks.toml               règles gitleaks par défaut + exclusion du manifeste
 .claude/settings.json        modèle, permissions, hooks, plugins, claudeMdExcludes
 .claude/agents/              8 subagents à modèle imposé
+.claude/skills/              skills du harness (/audit-pr), plus ceux des modules
 .harness/
   agents/core.md             conventions communes
   harness.json               configuration des règles, selon le type de dépôt

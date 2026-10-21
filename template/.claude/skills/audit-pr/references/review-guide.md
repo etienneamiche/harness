@@ -32,7 +32,7 @@ Tu ne modifies pas le code et tu ne fusionnes pas. Si la copie locale n'est pas 
 En français, en Markdown :
 
 ```
-# Audit PR #<n>, <k>e passage : <sha complet>
+# Audit PR #<n>, <1er | 2e | 3e…> passage : <sha complet>
 
 ## Résumé
 <2 à 6 lignes : ce que fait la PR, l'état global, ce qui décide du verdict.

@@ -22,17 +22,19 @@ La session principale ne fait pas la revue elle-même et n'écrit jamais le marq
 
 ## 2. Premier passage ou revue après corrections
 
-Chercher dans `comments` les marqueurs `<!-- auditor: sha=<sha> verdict=<v> -->` écrits par le compte courant (`gh api user --jq .login`). Les marqueurs d'un autre compte ne comptent pas : les dépôts sont publics.
+Chercher dans les `comments` lus à l'étape 1 les marqueurs de revue (`auditor: sha=<sha> verdict=<v>`, dans un commentaire HTML) écrits par le compte courant (`gh api user --jq .login`). Les marqueurs d'un autre compte ne comptent pas : les dépôts sont publics. Les lire dans ce JSON, sans relancer de commande : **ne jamais écrire l'ouverture du commentaire HTML suivie de `auditor:` dans une commande `gh`**, même en lecture (un filtre `--jq`, par exemple) : `git-guard` la refuse hors `auditor`. Pour filtrer, chercher `auditor: sha=`.
 
 - **Aucun marqueur** : premier passage, sur la PR entière.
-- **Un marqueur sur le SHA de tête** : la revue est déjà à jour. Rappeler son verdict, et ne relancer que si l'utilisateur le demande.
-- **Un marqueur sur un SHA plus ancien** : revue après corrections, passage n° (nombre de marqueurs + 1). On transmet à `auditor` le SHA déjà revu et le texte de la dernière revue. C'est dans les corrections qu'on trouve le plus de régressions : elles se vérifient en priorité, puis la PR entière est réévaluée.
+- **Un marqueur sur le SHA de tête** : la revue est déjà à jour. Rappeler son verdict, et ne relancer que si l'utilisateur le demande, par exemple après une correction faite hors du code (issue liée, description de la PR). On relance alors comme une revue après corrections, sur le même SHA, en transmettant la revue précédente à `auditor` : il vérifie d'abord que ses constats sont corrigés.
+- **Un marqueur sur un SHA plus ancien** : revue après corrections. On transmet à `auditor` le SHA déjà revu et le texte de la dernière revue. C'est dans les corrections qu'on trouve le plus de régressions : elles se vérifient en priorité, puis la PR entière est réévaluée.
+
+Le numéro de passage est le nombre de marqueurs du compte courant, plus un.
 
 ## 3. Préparer la copie locale
 
 `auditor` exécute les tests au lieu de se contenter de lire le diff : il lui faut le commit revu en local.
 
-- `git status --porcelain` vide et branche courante = `headRefName` : `git pull --ff-only`, puis vérifier que `git rev-parse HEAD` vaut `headRefOid`.
+- `git status --porcelain` vide et branche courante = `headRefName` : `git pull --ff-only`, puis vérifier que `git rev-parse HEAD` vaut `headRefOid`. En cas d'écart (des commits locaux pas encore poussés, par exemple), ne pas revoir un code qui n'est pas celui de la PR : proposer de les pousser par `git-ops` puis de relancer, ou lancer la revue avec « copie locale : non disponible ».
 - Copie propre sur une autre branche : `gh pr checkout <n>`, et noter la branche d'origine pour y revenir à la fin.
 - Modifications non commitées : ne rien toucher. Demander à l'utilisateur, ou lancer la revue sans exécution locale, en le signalant (la revue le dira dans sa méthode).
 
@@ -54,7 +56,7 @@ Rends-moi : le verdict, le nombre de constats par gravité, et l'URL du commenta
 
 Résumer en quelques lignes : verdict, constats bloquants et importants (un par ligne, avec `fichier:ligne`), lien vers le commentaire. Si une branche a été changée à l'étape 3, revenir sur la branche d'origine.
 
-- **`changes`** : proposer de confier les corrections à `dev`, puis de relancer `/audit-pr` (le verdict ne vaut que pour le commit revu).
+- **`changes`** : proposer de confier les corrections du code à `dev`, et celles de la PR elle-même (issue à lier, description) à `git-ops`, puis de relancer `/audit-pr` (le verdict ne vaut que pour le commit revu).
 - **`approve`** : proposer la fusion, **sans la lancer avant l'accord de l'utilisateur** :
   - feature ou fix : squash, avec un `-Subject` en anglais, Conventional Commits, terminé par le numéro de l'issue liée (à défaut, celui de la PR) :
     `pwsh -NoProfile -File .harness/tools/merge-pr.ps1 -Pr <n> -Subject "feat(api): add PDF export for invoices (#42)"`
