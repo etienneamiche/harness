@@ -180,6 +180,32 @@ Describe 'git-guard : le texte d''un message n''est pas une option' {
     It 'voit une option seule entre guillemets (<cmd>)' -ForEach @(
         @{ cmd = 'git commit "--no-verify" -m "feat: x (#1)"' }, @{ cmd = "git commit '-a' -m 'feat: x (#1)'" }, @{ cmd = 'git add "."' }
     ) { (Invoke-Hook -Data (Bash $cmd 'git-ops')).Decision | Should -Be 'deny' }
+    It 'accepte -a comme valeur de -m, et dans le corps d''un heredoc' {
+        (Invoke-Hook -Data (Bash 'git commit -m "-a" -m "feat: x (#1)"' 'git-ops')).Decision | Should -Be 'allow'
+        (Invoke-Hook -Data (Bash "git commit -F - <<'EOF'`nfeat: x (#1)`n`nThe -a flag and git add . are refused.`nEOF" 'git-ops')).Decision | Should -Be 'allow'
+    }
+    It 'ne masque pas ce que le shell exécute (<label>)' -ForEach @(
+        @{ label = 'substitution dans des guillemets'; cmd = 'echo "$(git push --force origin feature/x)"' }
+        @{ label = 'fin de la ligne d''un heredoc'; cmd = "git commit -F - <<EOF --no-verify`nfeat: x (#1)`nEOF" }
+        @{ label = 'fin de ligne d''un heredoc cité'; cmd = "git commit -F - <<'EOF' --no-verify`nfeat: x (#1)`nEOF" }
+        @{ label = 'heredoc dans une chaîne'; cmd = "echo `"<<'EOF'`"`ngit worktree add ../x`nEOF" }
+        @{ label = 'heredoc dans un commentaire'; cmd = "echo hi # <<'EOF'`ngit push --force origin x`nEOF" }
+        @{ label = 'apostrophe échappée (bash)'; cmd = "echo \' ; git commit -a -m x ; echo \'" }
+        @{ label = 'apostrophe échappée (pwsh)'; cmd = "echo `` `' ; git commit -a -m x ; echo `` `'" }
+        @{ label = '\" dans une chaîne pwsh'; cmd = 'git commit -m "x\" --no-verify "y"' }
+        @{ label = 'apostrophe dans un commentaire'; cmd = "echo a # it's`ngit worktree add ../x # '" }
+        @{ label = 'apostrophe dans une chaîne non littérale'; cmd = "echo `"`$x it's`" ; git push --force origin x ; echo 'y'" }
+        @{ label = 'guillemet typographique (pwsh)'; cmd = "echo 'a$([char]0x2019) ; git push --force origin x ; $([char]0x2019)b'" }
+        @{ label = 'commentaire bloc pwsh'; cmd = "<# ' #> git push --force origin x <# ' #>" }
+        @{ label = 'here-string qui contient une apostrophe'; cmd = "echo @'`nit's`n'@ ; git worktree add ../x ; echo '`n'@" }
+        @{ label = 'chaîne pwsh sur plusieurs lignes'; cmd = "echo `"`$x`n`" ; git push --force origin x ; `"z`"" }
+        @{ label = 'substitution dans un heredoc non cité'; cmd = "cat <<EOF`n'`$(git push --force origin x)'`nEOF" }
+        @{ label = 'stop-parsing pwsh'; cmd = "git --% commit -a -m 'x'" }
+    ) { (Invoke-Hook -Data (Bash $cmd 'dev')).Decision | Should -Be 'deny' }
+    It 'garde un chemin Windows sans masquer la suite' {
+        (Invoke-Hook -Data (Bash 'git -C C:\repo\app commit -m "feat(scripts): add -Days (#5)"' 'git-ops')).Decision | Should -Be 'allow'
+        (Invoke-Hook -Data (Bash 'git -C C:\repo\app commit -a -m "feat: x (#5)"' 'git-ops')).Decision | Should -Be 'deny'
+    }
 }
 
 Describe 'git-guard : contournements connus' {

@@ -20,7 +20,7 @@
             return @{ Decision = 'deny'; Reason = "pas d'alias git défini dans la commande (-c alias.…) : écrire la sous-commande en clair." }
         }
         # Toute option placée avant la sous-commande est retirée (celles qui prennent une valeur avec elle).
-        $cmd = [regex]::Replace($cmd, '\bgit((\s+(-C|-c|--git-dir|--work-tree|--namespace|--exec-path|--config-env|--super-prefix)(=|\s+)("[^"]*"|''[^'']*''|\S+))|(\s+--?[A-Za-z][\w-]*(=\S+)?))+', 'git')
+        $cmd = [regex]::Replace($cmd, '\bgit((\s+(-C|-c|--git-dir|--work-tree|--namespace|--exec-path|--config-env|--super-prefix)(=|\s+)("[^"]*"|''[^'']*''|\S+))|(\s+--?[A-Za-z][\w-]*(=\S+)?)|(\s+--%))+', 'git')
         # Même chose pour gh : -R / --repo peut se placer avant ou après le groupe (`gh pr -R x merge`).
         $cmd = [regex]::Replace($cmd, '(?<=\bgh\b[^;&|\n]*)\s(-R|--repo)(=|\s+)("[^"]*"|''[^'']*''|\S+)', '')
         $agent = $ctx.AgentType
@@ -28,13 +28,79 @@
         $who = if ($agent) { "l'agent '$agent'" } else { 'la session principale' }
 
         # 1. Interdits pour tout le monde. Ils portent sur les options de la commande, pas sur le texte
-        # qu'elle transporte : sans le texte cité ni le corps des heredocs et here-strings, un message de
-        # commit qui parle de `-Days` ou de `--no-verify` ne passe pas pour une option.
-        $bare = [regex]::Replace($cmd, '(?ms)<<-?\s*([''"]?)(\w+)\1[^\n]*\n.*?^\s*\2\s*$', '<<heredoc')
-        $bare = [regex]::Replace($bare, '(?s)@([''"])\r?\n.*?\r?\n\1@', "''")
-        # Une option seule entre guillemets (`"--no-verify"`, `'-a'`, `"."`) reste une option : on la remet en clair.
-        $bare = [regex]::Replace($bare, '(["''])(-{1,2}[\w-]+|\.|\+\S+)\1', '$2')
-        $bare = [regex]::Replace($bare, '"(?:[^"\\`]|[\\`].)*"|''[^'']*''', "''")
+        # qu'elle transporte : un message de commit qui parle de `-Days` ou de `--no-verify` n'est pas une option.
+        # Texte que bash ET pwsh traitent à coup sûr comme littéral : on peut le retirer de l'analyse.
+        # Ce qui est retiré, en lisant la commande de gauche à droite :
+        #  - une chaîne '…' fermée sur la même ligne ;
+        #  - une chaîne "…" fermée sur la même ligne, sans $, ` ni \ (ni substitution ni échappement) ;
+        #  - le corps d'un heredoc à délimiteur cité (<<'EOF', <<"EOF" : bash n'y substitue rien) ;
+        #  - le corps d'une here-string @'…'@ sans apostrophe.
+        # Au premier passage ambigu (guillemet non fermé ou non littéral, heredoc non cité, here-string
+        # refusée, commentaire, échappement autre qu'un caractère de chemin, backtick, --%, guillemet
+        # typographique), tout le reste de la commande est recopié tel quel : les deux shells pourraient
+        # ne plus découper pareil, et une commande masquée à tort serait un contournement. Dans le doute,
+        # le texte reste visible (au pire, un refus de trop). Une option seule entre guillemets
+        # ("--no-verify", '-a', ".") reste une option, sauf comme valeur de -m / --message.
+        function Get-BareCommand([string] $s) {
+            $out = [Text.StringBuilder]::new()
+            $smart = '[\u2018-\u201F]'
+            $heredocs = [System.Collections.Generic.Queue[string]]::new()
+            $i = 0; $n = $s.Length
+            while ($i -lt $n) {
+                $c = $s[$i]
+                $eol = $s.IndexOf("`n", $i); if ($eol -lt 0) { $eol = $n }
+                $rest = $false
+                if ($c -eq "`n") {
+                    [void] $out.Append($c); $i++
+                    # Corps des heredocs cités ouverts sur la ligne qui se termine : jusqu'à leur ligne de fin.
+                    while ($heredocs.Count -gt 0) {
+                        $delim = $heredocs.Dequeue()
+                        while ($i -lt $n) {
+                            $end = $s.IndexOf("`n", $i); if ($end -lt 0) { $end = $n }
+                            $line = $s.Substring($i, $end - $i).TrimEnd("`r").TrimStart("`t")
+                            $i = [Math]::Min($end + 1, $n)
+                            if ($line -eq $delim) { break }
+                        }
+                    }
+                    continue
+                }
+                elseif ($c -eq '\') {
+                    if ($i + 1 -lt $n -and $s[$i + 1] -match '[\w./:-]') { [void] $out.Append($s, $i, 2); $i += 2; continue }
+                    $rest = $true
+                }
+                elseif ($c -eq '`' -or [string] $c -match $smart -or $c -eq '#') { $rest = $true }
+                elseif ($c -eq '-' -and $s.Substring($i).StartsWith('--%')) { $rest = $true }
+                elseif ($c -eq '<' -and $s.Substring($i).StartsWith('<#')) { $rest = $true }
+                elseif ($c -eq '<' -and $s.Substring($i).StartsWith('<<<')) { [void] $out.Append('<<<'); $i += 3; continue }
+                elseif ($c -eq '<' -and $s.Substring($i).StartsWith('<<')) {
+                    if ($s.Substring($i) -match '^<<-?[ \t]*([''"])(\w+)\1') {
+                        $heredocs.Enqueue($Matches[2]); [void] $out.Append($Matches[0]); $i += $Matches[0].Length; continue
+                    }
+                    $rest = $true
+                }
+                elseif ($c -eq '@' -and $i + 2 -lt $n -and ($s[$i + 1] -eq "'" -or $s[$i + 1] -eq '"') -and $s[$i + 2] -match '[\r\n]') {
+                    $close = $s.IndexOf("`n'@", $i + 2)
+                    $body = if ($s[$i + 1] -eq "'" -and $close -ge 0) { $s.Substring($i + 2, $close - $i - 2) } else { $null }
+                    if ($null -ne $body -and $body -notmatch "'" -and $body -notmatch $smart) { [void] $out.Append("''"); $i = $close + 3; continue }
+                    $rest = $true
+                }
+                elseif ($c -eq "'" -or $c -eq '"') {
+                    $close = $s.IndexOf($c, $i + 1)
+                    $content = if ($close -gt $i -and $close -lt $eol) { $s.Substring($i + 1, $close - $i - 1) } else { $null }
+                    $literal = $null -ne $content -and $content -notmatch $smart -and ($c -eq "'" -or $content -notmatch '[$`\\]')
+                    if ($literal) {
+                        $isMessage = $out.ToString() -match '(^|\s)(-m|--message)(\s+|=)$'
+                        if ($content -match '^(-{1,2}[\w-]+|\.|\+\S+)$' -and -not $isMessage) { [void] $out.Append($content) } else { [void] $out.Append("''") }
+                        $i = $close + 1; continue
+                    }
+                    $rest = $true
+                }
+                if ($rest) { [void] $out.Append($s, $i, $n - $i); break }
+                [void] $out.Append($c); $i++
+            }
+            $out.ToString()
+        }
+        $bare = Get-BareCommand $cmd
         $forbidden = [ordered]@{
             'git\s+worktree\b'                                   = 'les worktrees sont interdits : on travaille par branches simples.'
             'git\s+rebase\b[^;&|]*\s(-i|--interactive)\b'        = 'le rebase interactif est interdit.'
