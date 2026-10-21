@@ -2,6 +2,14 @@
 
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versions : [semver](https://semver.org/lang/fr/).
 
+## [Non publié]
+
+### Ajouté
+- **Skill `/audit-pr`** : la revue complète d'une PR avant sa fusion, confiée à `auditor`, qui publie son verdict en commentaire. Le skill distingue le premier passage de la revue après corrections, prépare la copie locale, et propose un mode essai qui ne publie rien. Son guide (`references/review-guide.md`) fixe la méthode, la gravité, le format du commentaire et la publication du marqueur.
+
+### Modifié
+- `auditor` renvoie au guide de `/audit-pr` pour la méthode et le format, et ne garde que les règles non négociables.
+
 ## [0.2.0] - 2026-10-14
 
 Les conventions de code (phase 3 de la roadmap) et le système de modules.
