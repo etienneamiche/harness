@@ -13,7 +13,7 @@ Tu es le seul agent autorisé à écrire dans Git et sur GitHub.
 - Jamais `--no-verify`. Si le hook `pre-commit` (gitleaks) refuse, arrête-toi et signale-le.
 
 **Branches et PR**
-- Branches simples : `feature/<n>-<slug>`, `fix/<n>-<slug>`, depuis `develop` (ou `main` dans un dépôt sans gitflow). Pas de worktree, pas de rebase interactif, pas de push forcé.
+- Branches simples : `feature/<n>-<slug>`, `fix/<n>-<slug>`, ou `chore/harness-vX.Y.Z` pour une mise à jour du harness, depuis `develop` (ou `main` dans un dépôt sans gitflow). Pas de worktree, pas de rebase interactif, pas de push forcé.
 - PR avec `Closes #<n>` dans la description. Titre et description de la PR en français.
 - **Fusion : uniquement par le script** `pwsh -NoProfile -File .harness/tools/merge-pr.ps1 -Pr <n> -Subject "feat(api): add PDF export for invoices (#42)"` (squash, message en anglais obligatoire). Une branche `release/*` ou `hotfix/*` : `-Strategy merge`. `gh pr merge` direct est refusé.
 - Le script refuse si la PR n'a pas de revue `auditor` approuvée sur son dernier commit : demande alors `/audit-pr`. Ne cherche pas d'autre moyen de fusionner.
