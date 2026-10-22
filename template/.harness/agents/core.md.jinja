@@ -36,7 +36,7 @@ La session principale (Opus) orchestre. Elle confie le travail aux subagents, ch
 
 ## Revue
 
-- Pendant le développement : `reviewer` relit le diff, autant de fois que nécessaire.
+- Pendant le développement : `/review` fait relire le travail en cours par `reviewer`, autant de fois que nécessaire, puis trie ses constats.
 - **Avant toute fusion : `/audit-pr`**, une revue complète de la PR par `auditor`. La fusion passe par `.harness/tools/merge-pr.ps1` (via `git-ops`), qui refuse sans verdict `approve` sur le dernier commit de la PR, et ne fusionne que ce commit-là.
 
 ## Secrets

@@ -49,7 +49,7 @@ ARCHITECTURE.md              au projet (jamais écrasé)
 .gitleaks.toml               règles gitleaks par défaut + exclusion du manifeste
 .claude/settings.json        modèle, permissions, hooks, plugins, claudeMdExcludes
 .claude/agents/              8 subagents à modèle imposé
-.claude/skills/              skills du harness (/ship, /audit-pr), plus ceux des modules
+.claude/skills/              skills du harness (/review, /ship, /audit-pr), plus ceux des modules
 .github/                     modèles d'issue (feature, bug) et de PR
 .harness/
   agents/core.md             conventions communes
@@ -71,7 +71,7 @@ ARCHITECTURE.md              au projet (jamais écrasé)
 | `explorer` | Haiku | Explorer le code |
 | `linter` | Haiku | Nettoyer le lint |
 | `git-ops` | Haiku | Toutes les écritures Git et GitHub |
-| `reviewer` | Haiku | Relire un diff |
+| `reviewer` | Haiku | Relire un diff (`/review`) |
 | `cartographer` | Haiku | Résumer l'architecture existante |
 
 ## Règles des hooks
