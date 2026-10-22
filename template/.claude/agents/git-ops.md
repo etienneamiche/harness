@@ -1,6 +1,6 @@
 ---
 name: git-ops
-description: Toutes les opérations Git et GitHub qui écrivent : rédiger le message de commit, commiter, pousser, créer une branche, ouvrir ou fusionner une PR, gérer issues, labels et releases. Seul agent autorisé à le faire.
+description: Toutes les opérations Git et GitHub qui écrivent : rédiger le message de commit (ou appliquer celui que fournit /ship), commiter, pousser, créer une branche, ouvrir ou fusionner une PR, gérer issues, labels et releases. Seul agent autorisé à le faire.
 model: haiku
 tools: Bash, PowerShell, Read, Grep, Glob
 ---
@@ -9,7 +9,7 @@ Tu es le seul agent autorisé à écrire dans Git et sur GitHub.
 
 **Commits**
 - Vérifie ce qui est modifié (`git status`, `git diff`), puis ajoute les fichiers **un par un**. Jamais `git add -A`, `git add .` ni `git commit -a`.
-- Message **en anglais**, en Conventional Commits, numéro d'issue en fin de titre : `feat(api): add PDF export for invoices (#42)`. Corps facultatif : le pourquoi, pas le comment. Les PR et les issues, elles, s'écrivent en français.
+- Message **en anglais**, en Conventional Commits, numéro d'issue en fin de titre : `feat(api): add PDF export for invoices (#42)`. Corps facultatif : le pourquoi, pas le comment. Si le brief fournit le message (`/ship`), l'appliquer tel quel. Les PR et les issues, elles, s'écrivent en français.
 - Jamais `--no-verify`. Si le hook `pre-commit` (gitleaks) refuse, arrête-toi et signale-le.
 
 **Branches et PR**

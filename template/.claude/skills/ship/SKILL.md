@@ -65,13 +65,13 @@ Appeler le subagent `git-ops`, **sans paramètre `model`** (le hook `model-guard
 ```
 /ship de la branche <branche> (issue #<n>), base <base>.
 1. <Ajouter ces fichiers un par un, et aucun autre : <liste>.
-   Ne pas ajouter : <fichiers écartés, ou « rien »>.
    | Rien à ajouter : le travail est déjà commité.>
+   Ne pas ajouter, et laisser tels quels : <fichiers écartés, ou « rien »>.
 2. <Commiter avec ce message, tel quel : <message>
    | Rien à commiter.>
 3. <Pousser : git push -u origin <branche>. | Rien à pousser.>
 4. <PR à créer : gh pr create --base <base> --head <branche> --title "<titre>" --body-file <fichier>
-   | PR #<p> existante, description à jour : gh pr edit <p> --body-file <fichier>
+   | PR #<p> existante, description à mettre à jour : gh pr edit <p> --body-file <fichier>
    | PR #<p> existante : rien à faire, le push la met à jour.>
 5. Carte de l'issue en « En revue » : pwsh -NoProfile -File .harness/tools/board.ps1 -Issue <n> -Status 'En revue'
    (sans effet si elle y est déjà).
