@@ -49,6 +49,7 @@ BeforeAll {
         $d
     }
     function Bash([string] $Command, [string] $Agent = '') { Tool 'Bash' @{ command = $Command } $Agent }
+    function PowerShell([string] $Command, [string] $Agent = '') { Tool 'PowerShell' @{ command = $Command } $Agent }
 
     # Faux secrets construits à l'exécution : rien de détectable n'est écrit dans le dépôt.
     function New-FakeToken([string] $Prefix, [int] $Length) {
@@ -161,6 +162,72 @@ Describe 'board.ps1 : carte d''une issue sur le Project' {
     It 'laisse lire le Project (<cmd>)' -ForEach @(
         @{ cmd = 'gh project list --owner o' }, @{ cmd = 'gh project item-list 1 --owner o --format json' }
     ) { (Invoke-Hook -Data (Bash $cmd 'dev')).Decision | Should -Be 'allow' }
+}
+
+Describe 'git-guard : le texte d''un message n''est pas une option' {
+    It 'accepte un message qui parle d''options (<label>)' -ForEach @(
+        @{ label = '-m'; cmd = 'git commit -m "feat(scripts): add -Days and -WhatIf to clean-exports (#5)"' }
+        @{ label = 'heredoc'; cmd = "git commit -F - <<'EOF'`nfeat(scripts): clean up old exports (#5)`n`nDeletes the CSV older than -Days days; -WhatIf lists them.`nNever use --no-verify or git add -A.`nEOF" }
+        @{ label = 'here-string'; cmd = "git commit -m @'`nfeat(scripts): clean up old exports (#5)`n`n-Path and -All are optional.`n'@" }
+        @{ label = 'apostrophes'; cmd = "git commit -m 'fix(api): handle -a in names (#3)'" }
+    ) { (Invoke-Hook -Data (Bash $cmd 'git-ops')).Decision | Should -Be 'allow' }
+    It 'refuse toujours git commit -a hors du texte cité (<cmd>)' -ForEach @(
+        @{ cmd = 'git commit -a -m "feat: x (#1)"' }, @{ cmd = 'git commit -am "feat: x (#1)"' },
+        @{ cmd = 'git commit --all -m "feat: x (#1)"' }, @{ cmd = 'git commit -m "feat: x (#1)" -a' }
+    ) { (Invoke-Hook -Data (Bash $cmd 'git-ops')).Reason | Should -Match 'commit -a' }
+    It 'refuse toujours --no-verify hors du texte cité' {
+        (Invoke-Hook -Data (Bash 'git commit --no-verify -m "feat: x (#1)"' 'git-ops')).Reason | Should -Match 'no-verify'
+    }
+    It 'voit une option seule entre guillemets (<cmd>)' -ForEach @(
+        @{ cmd = 'git commit "--no-verify" -m "feat: x (#1)"' }, @{ cmd = "git commit '-a' -m 'feat: x (#1)'" }, @{ cmd = 'git add "."' }
+    ) { (Invoke-Hook -Data (Bash $cmd 'git-ops')).Decision | Should -Be 'deny' }
+    It 'accepte -a comme valeur de -m, et dans le corps d''un heredoc' {
+        (Invoke-Hook -Data (Bash 'git commit -m "-a" -m "feat: x (#1)"' 'git-ops')).Decision | Should -Be 'allow'
+        (Invoke-Hook -Data (Bash "git commit -F - <<'EOF'`nfeat: x (#1)`n`nThe -a flag and git add . are refused.`nEOF" 'git-ops')).Decision | Should -Be 'allow'
+    }
+    It 'ne masque pas ce que le shell exécute (<label>)' -ForEach @(
+        @{ label = 'substitution dans des guillemets'; cmd = 'echo "$(git push --force origin feature/x)"' }
+        @{ label = 'fin de la ligne d''un heredoc'; cmd = "git commit -F - <<EOF --no-verify`nfeat: x (#1)`nEOF" }
+        @{ label = 'fin de ligne d''un heredoc cité'; cmd = "git commit -F - <<'EOF' --no-verify`nfeat: x (#1)`nEOF" }
+        @{ label = 'heredoc dans une chaîne'; cmd = "echo `"<<'EOF'`"`ngit worktree add ../x`nEOF" }
+        @{ label = 'heredoc dans un commentaire'; cmd = "echo hi # <<'EOF'`ngit push --force origin x`nEOF" }
+        @{ label = 'apostrophe échappée (bash)'; cmd = "echo \' ; git commit -a -m x ; echo \'" }
+        @{ label = 'apostrophe échappée (pwsh)'; cmd = "echo `` `' ; git commit -a -m x ; echo `` `'" }
+        @{ label = '\" dans une chaîne pwsh'; cmd = 'git commit -m "x\" --no-verify "y"' }
+        @{ label = 'apostrophe dans un commentaire'; cmd = "echo a # it's`ngit worktree add ../x # '" }
+        @{ label = 'apostrophe dans une chaîne non littérale'; cmd = "echo `"`$x it's`" ; git push --force origin x ; echo 'y'" }
+        @{ label = 'guillemet typographique (pwsh)'; cmd = "echo 'a$([char]0x2019) ; git push --force origin x ; $([char]0x2019)b'" }
+        @{ label = 'commentaire bloc pwsh'; cmd = "<# ' #> git push --force origin x <# ' #>" }
+        @{ label = 'here-string qui contient une apostrophe'; cmd = "echo @'`nit's`n'@ ; git worktree add ../x ; echo '`n'@" }
+        @{ label = 'chaîne pwsh sur plusieurs lignes'; cmd = "echo `"`$x`n`" ; git push --force origin x ; `"z`"" }
+        @{ label = 'substitution dans un heredoc non cité'; cmd = "cat <<EOF`n'`$(git push --force origin x)'`nEOF" }
+        @{ label = 'stop-parsing pwsh'; cmd = "git --% commit -a -m 'x'" }
+        @{ label = 'stop-parsing pwsh, option dans une apostrophe'; cmd = "git --% commit -m 'x --no-verify'" }
+        @{ label = 'chaîne bash $''…'' avec \'''; cmd = "git commit -m `$'x\'' --no-verify -m ''" }
+        @{ label = 'délimiteur de heredoc à moitié cité'; cmd = "cat <<'E'OF`nx`nEOF`ngit push --force origin main`nE" }
+        @{ label = 'option entre guillemets avec sa valeur'; cmd = "git push '--force-with-lease=main' origin main" }
+    ) { (Invoke-Hook -Data (Bash $cmd 'dev')).Decision | Should -Be 'deny' }
+    It 'voit la sous-commande git derrière --% de pwsh, pour les opérations réservées' {
+        (Invoke-Hook -Data (Bash "git --% commit -m 'feat: x (#1)'" 'dev')).Decision | Should -Be 'deny'
+    }
+    It 'accepte un chemin Windows entre guillemets doubles (<label>)' -ForEach @(
+        @{ label = 'git -C'; cmd = 'git -C "C:\repo\app" commit -m "feat(scripts): add -Days (#16)"' }
+        @{ label = 'cd'; cmd = 'cd "C:\repo\app" && git commit -m "feat(scripts): add -Days (#16)"' }
+    ) {
+        (Invoke-Hook -Data (Bash $cmd 'git-ops')).Decision | Should -Be 'allow'
+        (Invoke-Hook -Data (PowerShell $cmd 'git-ops')).Decision | Should -Be 'allow'
+    }
+    It 'refuse un \ qui échappe, dans une chaîne' {
+        (Invoke-Hook -Data (Bash 'git commit -m "x\" -a "y"' 'git-ops')).Decision | Should -Be 'deny'
+    }
+    It 'refuse une option derrière --%, avec l''outil PowerShell (<cmd>)' -ForEach @(
+        @{ cmd = "git --% commit -m 'feat: x (#16) -a'" }, @{ cmd = 'git --% commit "-a" -m x' },
+        @{ cmd = 'git --% push origin x "--force"' }, @{ cmd = "git -C . --% commit --no-verify -m 'x'" }
+    ) { (Invoke-Hook -Data (PowerShell $cmd 'git-ops')).Decision | Should -Be 'deny' }
+    It 'garde un chemin Windows sans masquer la suite' {
+        (Invoke-Hook -Data (Bash 'git -C C:\repo\app commit -m "feat(scripts): add -Days (#5)"' 'git-ops')).Decision | Should -Be 'allow'
+        (Invoke-Hook -Data (Bash 'git -C C:\repo\app commit -a -m "feat: x (#5)"' 'git-ops')).Decision | Should -Be 'deny'
+    }
 }
 
 Describe 'git-guard : contournements connus' {
