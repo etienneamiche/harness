@@ -19,11 +19,12 @@ Le circuit d'une feature est `/feature` → **`/review`** (autant de fois que n�
   - les commits pas encore fusionnés : `git diff origin/<base>...HEAD` ;
   - les modifications non commitées, indexées ou non : `git diff HEAD` ;
   - les nouveaux fichiers non suivis : `git ls-files --others --exclude-standard`. `git diff` ne les montre pas, et c'est souvent là qu'est le code neuf.
-- **Restreint**, si l'utilisateur le demande : à un chemin (`-- <chemin>` sur chaque commande), ou à ce qui est indexé (`git diff --cached`).
+- **Restreint**, si l'utilisateur le demande : à un chemin (le pathspec `<chemin>` au lieu de `.`), ou à ce qui est indexé (`git diff --cached` seul).
 - Sur `main` ou `develop` sans rien de modifié, il n'y a rien à relire : le dire.
-- Écarter de la relecture les fichiers générés et les lockfiles (`*.lock`, `package-lock.json`, `*.g.cs`, `*.queries.ts` générés par Orval…). Ne jamais ouvrir un fichier de secrets (`.env*`, `*.pem`, `*.key`) : le signaler s'il traîne dans le diff, c'est un constat en soi.
+- **Les fichiers relus**, choisis à partir des seuls noms : `git diff --name-only` sur les mêmes périmètres, et la liste des non suivis. Mettre de côté chaque fichier de secrets (`.env*` sauf `.env.example`, `.env.sample`, `.env.template` et `.env.dist`, `*.pem`, `*.key`, `secrets*`), chaque fichier généré et chaque lockfile (`*.lock`, `package-lock.json`, `*.g.cs`, `*.queries.ts` générés par Orval…). Les autres forment la liste des fichiers relus, ou des dossiers entiers quand aucun de leurs fichiers n'est mis de côté.
+- **Le pathspec**, dans toutes les commandes `git diff`, `--shortstat` compris : cette liste, et rien d'autre (`-- <fichiers ou dossiers relus>`). Si rien n'est mis de côté, `-- <. ou chemin>` suffit. Un `git diff` sans pathspec affiche en clair un secret suivi par Git, et noie Haiku sous un lockfile. On ne peut pas non plus exclure un secret par son nom (`":(exclude)<fichier>"`) : `secret-guard` refuse toute commande qui nomme un fichier de secrets, à juste titre. Un fichier de secrets dans le diff est un constat en soi, à signaler par son nom, sans jamais l'ouvrir ni le citer dans une commande.
 - **L'issue** : le numéro du nom de branche (`feature/<n>-…`, `fix/<n>-…`). Si elle existe, lire ses critères d'acceptation (`gh issue view <n> --json title,body`) : un critère oublié est un constat utile.
-- **La taille** : `git diff --shortstat` sur les deux premières commandes, plus les lignes des fichiers non suivis. Au-delà d'environ 800 lignes, découper par zone (un dossier ou une couche : API, front, tests…) et lancer 2 ou 3 `reviewer` en parallèle, chacun sur sa zone. Un seul appel sur un très gros diff survole tout.
+- **La taille** : `git diff --shortstat` sur les deux premières commandes, avec ce pathspec, plus les lignes des fichiers non suivis. Au-delà d'environ 800 lignes, découper par zone (un dossier ou une couche : API, front, tests…) et lancer 2 ou 3 `reviewer` en parallèle, chacun sur sa zone. Un seul appel sur un très gros diff survole tout.
 
 ## 2. Confier la relecture à `reviewer`
 
@@ -31,11 +32,12 @@ Appeler le subagent `reviewer`, **sans paramètre `model`** (le hook `model-guar
 
 ```
 Relis le travail en cours de la branche <branche>, base <base>.
-Périmètre :
-- commits : git diff origin/<base>...HEAD [-- <chemin>]
-- non commité : git diff HEAD [-- <chemin>]
-- nouveaux fichiers, à lire en entier : <liste, ou « aucun »>
-Hors relecture : <fichiers générés, lockfiles, ou « rien »>.
+Périmètre, avec ces commandes exactement, sans en élargir le pathspec :
+<- commits : git diff origin/<base>...HEAD -- <fichiers ou dossiers relus>
+ - non commité : git diff HEAD -- <fichiers ou dossiers relus>
+ - nouveaux fichiers, à lire en entier : <liste, ou « aucun »>
+| indexé seulement : git diff --cached -- <fichiers ou dossiers relus>>
+Mis de côté, à ne pas ouvrir : <fichiers générés, lockfiles, et « <n> fichier(s) de secrets » sans leur nom, ou « rien »>.
 <Issue #<n> : <titre>. Critères d'acceptation : <liste>. Signale ceux que le diff ne remplit pas.>
 Conventions : AGENTS.md et les fichiers qu'il importe (.harness/agents/, .harness/modules/<module>/).
 Pour chaque constat : chemin:ligne, le problème en une phrase, et pourquoi c'en est un (le cas qui casse).
@@ -45,13 +47,13 @@ Si rien d'important, dis-le en une ligne.
 
 ## 3. Trier les constats
 
-Pour chaque constat, ouvrir le code à la ligne citée. Lire le code suffit le plus souvent. Un essai rapide se justifie quand le constat en dépend (un cas limite, un comportement du langage) : le faire dans un dossier temporaire, hors du dépôt, et le supprimer ensuite avec `[IO.Directory]::Delete(<dossier>, $true)`. Puis :
+Pour chaque constat, ouvrir le code à la ligne citée. Lire le code suffit le plus souvent. Un essai rapide se justifie quand le constat en dépend (un cas limite, un comportement du langage) : le faire hors du dépôt, dans un seul dossier d'essai par session, `Join-Path ([IO.Path]::GetTempPath()) 'review-try'`, réutilisé d'un essai à l'autre. Ne pas le supprimer, et le citer dans le compte rendu. Une suppression récursive passe par `destructive-guard` : la contourner par une autre API reviendrait à neutraliser ce garde-fou. Puis :
 - **le confirmer** s'il tient : le bug se produit vraiment, la convention existe vraiment, le test manque vraiment ;
 - **l'écarter** sinon, par exemple quand le cas est déjà géré plus loin, quand la convention citée n'existe pas, ou quand le test existe dans un autre fichier. Les écarts se disent en une ligne, pour que l'utilisateur sache que la relecture les a vus.
 
 Classer ce qui reste :
 - **À corriger** : un bug, une erreur non gérée, une faille, un secret, un critère de l'issue non rempli, un test manquant pour du code qui en demande un ;
-- **À voir** : une convention, un nom trompeur, de la duplication, du code mort, une simplification possible.
+- **À voir** : une convention, un nom trompeur, de la duplication, du code mort, une simplification possible, et un bug qui ne se produit que dans une configuration improbable pour ce projet (une culture exotique, un autre système que celui de la cible). « À corriger » doit rester la liste de ce qui casse vraiment.
 
 Si la session voit elle-même un problème sérieux que `reviewer` a manqué, en lisant le code pour trier, l'ajouter et dire qu'il vient d'elle.
 
