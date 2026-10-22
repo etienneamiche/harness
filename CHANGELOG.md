@@ -6,6 +6,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versions : [s
 
 ### Ajouté
 - **Skill `/audit-pr`** : la revue complète d'une PR avant sa fusion, confiée à `auditor`, qui publie son verdict en commentaire. Le skill distingue le premier passage de la revue après corrections, prépare la copie locale, et propose un mode essai qui ne publie rien. Son guide (`references/review-guide.md`) fixe la méthode, la gravité, le format du commentaire et la publication du marqueur.
+- **Skill `/ship`** : envoie le travail terminé d'une branche en revue. La session principale contrôle les fichiers (secrets et fichiers de travail écartés), les tests et le lint, puis rédige le commit et la PR (modèle de PR, critères de l'issue) ; `git-ops` commite, pousse, ouvre ou met à jour la PR et passe la carte en « En revue ». Le skill refuse de commiter sur `main` ou `develop`, signale qu'un nouveau commit annule une approbation `auditor`, et propose un mode essai qui ne publie rien.
 - **`.harness/tools/board.ps1`**, réservé à `git-ops` : place la carte d'une issue dans une colonne du Project « services », et l'y ajoute si besoin. Les écritures `gh project` sont réservées à `git-ops` elles aussi.
 - **Modèles d'issue et de PR** (`.github/`) : `feature` et `bug`, avec leurs critères d'acceptation, et un modèle de PR que remplit `/ship`.
 
