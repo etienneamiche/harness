@@ -10,7 +10,7 @@ Le circuit d'une feature est **`/feature`** → `/review` (autant de fois que n�
 
 Chacun son rôle : **`git-ops`** crée la branche et déplace la carte, **`dev`** (Opus) écrit le code et ses tests, `/review` et `/lint` contrôlent. La session principale orchestre : elle lit l'issue, propose le plan, vérifie chaque étape et rend compte.
 
-**Mode essai** : si l'utilisateur demande un essai ou « sans publier », la branche est créée en local, mais la carte ne bouge pas et rien ne part sur GitHub. Ce qui aurait été fait sur GitHub va dans le fichier qu'il indique.
+**Mode essai** : si l'utilisateur demande un essai ou « sans publier », la branche est créée en local, mais la carte ne bouge pas et rien ne part sur GitHub. Ce qui aurait été fait sur GitHub va dans le fichier qu'il indique, ou par défaut dans `Join-Path ([IO.Path]::GetTempPath()) "feature-<n>.md"`. Ce fichier est hors du dépôt : non suivi dans le dépôt, il passerait pour du travail non commité au `/feature` suivant.
 
 ## 1. Lire l'issue
 
@@ -22,9 +22,10 @@ Chacun son rôle : **`git-ops`** crée la branche et déplace la carte, **`dev`*
 
 - `git status --porcelain --untracked-files=all` et `git branch --show-current`.
 - **Base** : `develop` s'il existe sur le dépôt distant (`git ls-remote --heads origin develop`), sinon `main`. Puis `git fetch origin <base>`.
-- **La branche de l'issue existe déjà** (`feature/<n>-…` ou `fix/<n>-…`, en local ou sur `origin`) : la reprendre. Le travail a peut-être commencé : lire `git log origin/<base>..` et le diff avant de planifier la suite.
-- **Du travail non commité sur une autre branche** : s'arrêter et le dire. Changer de branche emporterait ces modifications dans la nouvelle feature, et les mélangerait. C'est à l'utilisateur de les envoyer, de les mettre de côté ou de les abandonner.
-- Sinon, **`git-ops` crée la branche** et déplace la carte :
+- **D'abord, le travail non commité**, quelle que soit la suite : si la branche courante n'est pas celle de l'issue et que `git status` n'est pas vide, s'arrêter et le dire. Passer sur une autre branche, qu'elle soit nouvelle ou reprise, emporterait ces modifications en silence et les mélangerait au travail de l'issue. C'est à l'utilisateur de les envoyer, de les mettre de côté ou de les abandonner.
+- **La branche de l'issue existe-t-elle déjà ?** En local : `git branch --list 'feature/<n>-*' 'fix/<n>-*'`. Sur `origin` : `git ls-remote --heads origin 'feature/<n>-*' 'fix/<n>-*'`, car le seul `fetch` de la base ne montre pas une branche poussée depuis un autre clone.
+  - **Oui** : la reprendre. Si l'on n'est pas déjà dessus, la session passe dessus par `git switch '<branche>'`. Une branche qui n'existe que sur `origin` devient alors une branche locale, qui suit sa propre branche distante. Le travail a peut-être commencé : lire `git log origin/<base>..` et le diff avant de planifier la suite.
+  - **Non** : **`git-ops` crée la branche** et déplace la carte :
 
 ```
 /feature de l'issue #<n>.
@@ -32,6 +33,8 @@ Chacun son rôle : **`git-ops`** crée la branche et déplace la carte, **`dev`*
 2. Carte de l'issue en « En cours » : pwsh -NoProfile -File .harness/tools/board.ps1 -Issue <n> -Status 'En cours'
 Ne pousse rien. Si une étape échoue ou si un hook la refuse, arrête-toi et rapporte le message exact.
 ```
+
+  Si seule l'étape 2 échoue (pas de Project sur le compte, réseau…), la branche existe : continuer, et signaler la carte inchangée dans le compte rendu. Le board suit l'avancement, mais il ne doit pas bloquer le travail.
 
   Le `<slug>` reprend le titre en quelques mots anglais, en minuscules, séparés par des tirets (`feature/42-invoice-pdf-export`). `--no-track` évite que la branche suive `<base>` : un `git push` sans argument pousserait sinon sur la base. En **mode essai**, le brief s'arrête à l'étape 1.
 
@@ -52,7 +55,7 @@ Implémente l'issue #<n> sur la branche <branche> : <titre>.
 Critères d'acceptation, à remplir tous : <liste>.
 Plan validé : <plan>.
 Le code et ses tests, selon AGENTS.md, ARCHITECTURE.md et les conventions des modules.
-Lance scripts/test.ps1 (et scripts/build.ps1 s'il existe) jusqu'au vert.
+Lance scripts/test.ps1 s'il existe, sinon les tests de la stack selon les conventions du module (et scripts/build.ps1 s'il existe), jusqu'au vert.
 Ne commite pas. Rends : les fichiers modifiés, le résultat des tests, et chaque critère rempli ou non.
 ```
 
@@ -63,6 +66,7 @@ Vérifier ensuite par soi-même : `git status`, les tests relancés, chaque crit
 - **`/review`** sur le travail de la branche. Ses points « À corriger » repartent chez `dev`, avec le `chemin:ligne`. Puis un nouveau `/review`. **Deux tours au plus** : au-delà, le problème demande souvent une décision plutôt qu'une correction, et il se signale dans le compte rendu. Les points « À voir » sont signalés, sans être corrigés d'office.
 - **`/lint`**. S'il reste des avertissements, les signaler.
 - Les skills `/review` et `/lint` absents du projet : faire la même chose à la main, avec `reviewer` puis `linter`, et le dire.
+- Lancés depuis `/feature`, ces skills ne terminent pas le travail. Leurs fins, « ne rien corriger sans l'accord de l'utilisateur » et la proposition de `/ship`, cèdent la place à cette étape et à la suivante. Demander `/feature`, c'est demander que les points « À corriger » soient corrigés.
 
 ## 6. Rendre compte et proposer `/ship`
 
