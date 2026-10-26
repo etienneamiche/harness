@@ -43,7 +43,7 @@ Ne pousse rien. Si une étape échoue ou si un hook la refuse, arrête-toi et ra
 En quelques lignes : les fichiers créés ou modifiés, les tests prévus (un par critère au moins), l'approche si elle n'est pas évidente, et une estimation de la taille. S'appuyer sur `AGENTS.md`, `ARCHITECTURE.md` et le code existant (codegraph d'abord, ou `explorer` pour une exploration large).
 
 - **Faire valider le plan** avant que `dev` commence : une mauvaise direction coûte une implémentation entière. Deux exceptions. Si l'issue est triviale (un fichier, une approche évidente), annoncer le plan et continuer. Si l'utilisateur a dit de ne pas attendre, continuer aussi.
-- **Au-delà d'environ 400 lignes**, hors fichiers générés, proposer de découper l'issue (une PR = une issue, moins de 400 lignes). Ne pas découper soi-même.
+- **Au-delà d'environ 1 500 lignes**, hors fichiers générés, proposer de découper l'issue (une PR = une issue, moins de 1 500 lignes). Ne pas découper soi-même.
 - **Un besoin d'architecture** (nouvelle dépendance majeure, nouveau motif, besoin d'infra) se signale : il demande un ADR, voire l'agent `architect`, avant le code.
 
 ## 4. Faire implémenter par `dev`

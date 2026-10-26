@@ -18,6 +18,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versions : [s
 
 ### Modifié
 - Convention de branches : `chore/harness-vX.Y.Z` pour une mise à jour du harness.
+- La taille cible d'une PR passe de 400 à 1 500 lignes modifiées, hors fichiers générés et lockfiles : conventions, `/feature`, `/ship`, guide de `/audit-pr` et modèle d'issue `feature`.
 - `auditor` renvoie au guide de `/audit-pr` pour la méthode et le format, et ne garde que les règles non négociables.
 
 ## [0.2.0] - 2026-10-14

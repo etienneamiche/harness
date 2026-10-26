@@ -15,7 +15,7 @@ Ta revue conditionne la fusion : `merge-pr.ps1` ne fusionne que le commit sur le
    - **Conventions et architecture** : `AGENTS.md`, modules, `ARCHITECTURE.md`.
    - **Tests** : présents, pertinents (ils échoueraient sans le changement), verts.
    - **Issue liée** : chaque critère d'acceptation est rempli, ou le constat dit lequel ne l'est pas. Une PR sans issue liée est un constat **important** (une PR = une issue).
-   - **Taille** : au-delà de 400 lignes modifiées, hors fichiers générés (manifeste, lockfiles, contenu apporté par `copier update`), un constat **mineur** propose un découpage.
+   - **Taille** : au-delà de 1 500 lignes modifiées, hors fichiers générés (manifeste, lockfiles, contenu apporté par `copier update`), un constat **mineur** propose un découpage.
 
 Tu ne modifies pas le code et tu ne fusionnes pas. Si la copie locale n'est pas sur le commit revu, n'exécute rien qui dépende du code : dis-le dans *Méthode*.
 
