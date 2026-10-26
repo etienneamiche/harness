@@ -15,7 +15,7 @@ labels: feature
 
 ## Hors périmètre
 
-<!-- Ce que cette issue ne fait pas, pour garder la PR sous 400 lignes. -->
+<!-- Ce que cette issue ne fait pas, pour garder la PR sous 1 500 lignes. -->
 
 ## Notes
 
