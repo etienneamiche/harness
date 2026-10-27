@@ -47,9 +47,10 @@ AGENTS.md                    au projet (jamais écrasé), importe .harness/agent
 ARCHITECTURE.md              au projet (jamais écrasé)
 .gitattributes               fins de ligne (prioritaire sur core.autocrlf)
 .gitleaks.toml               règles gitleaks par défaut + exclusion du manifeste
+cliff.toml                   config git-cliff du CHANGELOG (app, game, sandbox, template)
 .claude/settings.json        modèle, permissions, hooks, plugins, claudeMdExcludes
 .claude/agents/              8 subagents à modèle imposé
-.claude/skills/              skills du harness (/idea, /spec, /feature, /review, /lint, /ship, /audit-pr), plus ceux des modules
+.claude/skills/              skills du harness (/idea, /spec, /feature, /review, /lint, /ship, /audit-pr, /release), plus ceux des modules
 .github/                     modèles d'issue (feature, bug) et de PR
 .harness/
   agents/core.md             conventions communes
