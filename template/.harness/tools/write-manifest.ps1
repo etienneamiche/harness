@@ -1,4 +1,5 @@
 #Requires -Version 7.4
+
 <#
 .SYNOPSIS
     Écrit .harness/manifest.json : l'empreinte SHA-256 de chaque fichier géré par le harness.

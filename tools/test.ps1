@@ -1,4 +1,5 @@
 #Requires -Version 7.4
+
 <#
 .SYNOPSIS
     Teste le harness : génère un projet de chaque type dans un dossier temporaire,
