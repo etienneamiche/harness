@@ -15,8 +15,8 @@ Chacun son rôle : **`architect`** (Opus) conçoit la spécification, **`git-ops
 ## 1. Lire l'issue et situer le travail
 
 - `gh issue view <n> --json number,title,body,labels,state`. Une issue fermée : s'arrêter et le dire.
+- **Le travail a-t-il commencé ?** Le vérifier avant toute question. Chercher une branche (`git branch --list 'feature/<n>-*' 'fix/<n>-*'` et `git ls-remote --heads origin 'feature/<n>-*' 'fix/<n>-*'`) et une PR ouverte (`gh pr list --state open --json number,headRefName,body`, dont la branche contient `/<n>-` ou le corps cite `#<n>` sans autre chiffre à la suite : `#3` ne doit pas trouver `#32`). Si oui, prévenir que changer les critères change la cible d'un travail en cours, et ne continuer qu'avec l'accord de l'utilisateur. La carte ne reviendra pas alors en « Prêt » : elle est déjà plus loin.
 - **Le besoin** : si l'issue ne dit pas pour qui, quel problème et ce qui est attendu, poser les questions qui manquent, toutes dans un seul message numéroté, et attendre la réponse. `architect` ne peut pas spécifier un besoin qu'il devine.
-- **Le travail a-t-il commencé ?** Chercher une branche (`git branch --list 'feature/<n>-*' 'fix/<n>-*'` et `git ls-remote --heads origin 'feature/<n>-*' 'fix/<n>-*'`) et une PR ouverte (`gh pr list --state open --json number,headRefName,body`, dont la branche contient `/<n>-` ou le corps cite `#<n>`). Si oui, prévenir que changer les critères change la cible d'un travail en cours, et ne continuer qu'avec l'accord de l'utilisateur. La carte ne reviendra pas alors en « Prêt » : elle est déjà plus loin.
 - **Un bug** (label `bug`) se spécifie aussi : les critères disent que le cas décrit fonctionne et qu'un test le couvre (il échoue sans la correction). Les impacts partent de la cause probable.
 
 ## 2. Faire concevoir la spécification par `architect`
@@ -25,6 +25,7 @@ Appeler le subagent `architect`, **sans paramètre `model`** (le hook `model-gua
 
 ```
 Spécifie l'issue #<n> : <titre>.
+Type : <feature | bug>. Pour un bug, les critères disent que le cas décrit fonctionne et qu'un test le couvre (il échoue sans la correction), et les impacts partent de la cause probable.
 Issue : <corps complet>.
 <Réponses de l'utilisateur aux questions, s'il y en a eu.>
 Pars de l'existant : AGENTS.md, ARCHITECTURE.md, docs/ et docs/adr/, et le code (codegraph d'abord).
@@ -39,12 +40,15 @@ Rends, sans rien écrire dans le dépôt :
 
 Relire ce qu'il rend avant de le montrer : chaque critère doit pouvoir se vérifier sans interprétation. « Le script est robuste » ne se vérifie pas ; « un CSV verrouillé est ignoré et signalé, les autres sont archivés » se vérifie. Reformuler ce qui doit l'être.
 
+Vérifier aussi qu'il n'a rien écrit : `git status --porcelain --untracked-files=all`. `architect` a les outils d'écriture et sa définition l'invite à écrire dans `docs/`. Un fichier apparu se signale à l'utilisateur, qui décide de son sort : laissé là, il bloquerait le `/feature` suivant comme du travail non commité.
+
 ## 3. Faire trancher et valider
 
 - **Les options** d'un choix structurant : les présenter avec leurs compromis et la recommandation d'`architect`, puis **attendre la décision**. La spécification se finalise ensuite selon l'option choisie, que la session intègre elle-même ou fait reprendre par `architect` si elle change le plan en profondeur.
 - **Une décision structurante appelle un ADR** (conventions : `docs/adr/NNNN-titre-court.md`). `/spec` ne l'écrit pas. La décision et ses raisons vont dans les Notes de l'issue, et l'ADR devient un critère : « ADR `docs/adr/NNNN-…` qui consigne <la décision> ».
-- **Au-delà d'environ 1 500 lignes**, hors fichiers générés, proposer un découpage. Avec l'accord de l'utilisateur, l'issue garde la première partie et sa spécification. Les autres parties deviennent de nouvelles issues `feature` en « Idée », avec leur besoin : chacune passera par son propre `/spec`.
-- Montrer le corps complet de l'issue mise à jour et **le faire valider**. Ses corrections s'appliquent avant la mise à jour.
+- **Un manque de l'écosystème** signalé par `architect` (une techno, un service qu'aucun module ne couvre) : le montrer à l'utilisateur, le noter dans les Notes de l'issue, et ne pas planifier de contournement local. C'est un sujet pour `/evolve`, comme le dit la définition d'`architect`.
+- **Au-delà d'environ 1 500 lignes**, hors fichiers générés, proposer un découpage. Avec l'accord de l'utilisateur, l'issue garde la première partie et sa spécification. Les autres parties deviennent de nouvelles issues `feature` en « Idée » : chacune passera par son propre `/spec`. Rédiger le titre et le corps de chacune selon le modèle `feature` (le Besoin de la partie, « À préciser par `/spec` » en critères, « Découpée de #<n> » dans les Notes) : elles partent sur GitHub, donc l'utilisateur les valide comme le reste.
+- Montrer le corps complet de l'issue mise à jour, et celui de chaque nouvelle issue, puis **les faire valider**. Les corrections s'appliquent avant toute écriture sur GitHub.
 
 Le corps mis à jour garde le **Besoin** tel quel (c'est la parole de l'utilisateur) et remplace les critères provisoires :
 
@@ -89,9 +93,10 @@ Pour un bug, garder les sections du modèle `bug` (ce qui se passe, ce qui est a
 Si une étape échoue ou si un hook la refuse, arrête-toi et rapporte le message exact.
 ```
 
-- **Travail déjà commencé** : pas d'étape 2.
-- **Découpage accepté** : ajouter, pour chaque nouvelle partie, `gh issue create --title "<titre>" --body-file '<fichier>' --label feature` puis `board.ps1 -Issue <m> -Status 'Idée'`, et demander les numéros en retour. Le titre va entre guillemets doubles, comme dans `/ship` : une apostrophe, courante en français, fermerait une chaîne entre apostrophes. Un titre qui contient `"`, `$` ou un backtick se reformule sans eux.
-- Si seule l'étape 2 échoue (pas de Project sur le compte, réseau…), l'issue est à jour : le signaler, sans refaire l'étape 1.
+- **Travail déjà commencé** : pas d'étape 2 du brief.
+- **Découpage accepté** : un premier appel à `git-ops` crée d'abord les nouvelles issues, pour que l'issue d'origine puisse citer leurs numéros. Pour chacune : `gh issue create --title "<titre>" --body-file '<fichier>' --label feature` puis `board.ps1 -Issue <m> -Status 'Idée'`, avec les numéros en retour. La session reporte ces numéros dans le Hors périmètre de l'issue d'origine (« Suite : #m, #p »), puis le brief ci-dessus la met à jour.
+- **Le titre entre guillemets doubles**, comme dans `/ship` : une apostrophe, courante en français, fermerait une chaîne entre apostrophes. Les guillemets doubles interprètent en revanche `$`, le backtick et tout guillemet double, droit (`"`) ou typographique (`“ ”`, que pwsh lit comme `"`) : un titre qui en contient se reformule sans eux, avec « » si besoin.
+- Si seule l'étape 2 du brief échoue (pas de Project sur le compte, réseau…), l'issue est à jour : le signaler, sans refaire l'étape 1 du brief.
 - **Mode essai** : pas d'appel à `git-ops`. Écrire le corps et ces commandes dans le fichier d'essai.
 
 ## 5. Rendre compte et proposer `/feature`
@@ -103,6 +108,7 @@ Critères : <nombre>
 Taille estimée : <~n lignes>
 Décisions : <option retenue, ADR prévu | aucune>
 Découpage : <#m, #p créées en « Idée » | aucun>
+Manques de l'écosystème : <… , pour /evolve | aucun>
 Questions ouvertes : <… | aucune>
 ```
 
