@@ -12,7 +12,23 @@ La session principale mène l'échange et rédige l'issue. **`git-ops`** la cré
 
 **Mode essai** : si l'utilisateur demande un essai ou « sans publier », aucune issue n'est créée et aucune carte ne bouge. Le ou les brouillons, et les gestes GitHub qui auraient suivi, vont dans le fichier qu'il indique, ou par défaut dans `Join-Path ([IO.Path]::GetTempPath()) "idea-<slug>.md"`. Ce fichier reste hors du dépôt, pour ne pas passer pour du travail non commité. Le mode essai ne touche que GitHub : les questions et la validation du brouillon se font comme d'habitude, dans la conversation.
 
-## 1. Comprendre l'idée
+## 1. Situer l'idée
+
+Un **bug** n'est pas une idée : quelque chose qui marchait, ou devrait marcher, et ne marche pas. Ne rien créer, et renvoyer vers le modèle d'issue `bug` (`.github/ISSUE_TEMPLATE/bug.md`), qui demande les étapes pour reproduire le problème.
+
+Une idée de **nouveau projet**, et non une fonctionnalité de ce projet, relève de `/project-idea` à la racine de l'écosystème : le dire.
+
+Sinon, **chercher les doublons** avant toute question : une idée déjà couverte n'a pas besoin d'être clarifiée, et une issue voisine aide à poser les bonnes questions. Chercher les issues ouvertes proches, avec deux ou trois jeux de mots-clés tirés de l'idée :
+
+```
+gh issue list --state open --search "<mots-clés>" --json number,title,labels --limit 10
+```
+
+- **Une issue couvre déjà l'idée** : le dire, avec son numéro et son titre, et proposer de la compléter par un commentaire au lieu d'en créer une autre. Deux issues pour le même besoin finissent en deux branches concurrentes.
+- **Des issues voisines** : les citer dans les « Notes » du brouillon, pour que `/spec` les voie.
+- Rien de proche : continuer sans le mentionner longuement.
+
+## 2. Compléter le besoin
 
 Partir de ce que l'utilisateur a déjà dit. Il faut quatre choses pour écrire une bonne issue :
 - **pour qui** : quel utilisateur ou quel usage ;
@@ -21,22 +37,6 @@ Partir de ce que l'utilisateur a déjà dit. Il faut quatre choses pour écrire 
 - **ce qui est hors périmètre** : ce que l'idée ne fait pas.
 
 Poser **seulement les questions qui manquent**, toutes dans un seul message et numérotées, pour qu'il réponde en une fois, puis **attendre sa réponse** avant de rédiger : un brouillon écrit sur des suppositions serait à refaire. Une idée déjà claire n'en déclenche aucune : reformuler et passer à la suite. Si l'idée appelle aussi un découpage (étape 3), le proposer dans le même message. Ce qui reste inconnu après sa réponse se note dans l'issue (« à préciser par `/spec` ») au lieu de prolonger l'échange.
-
-Un **bug** n'est pas une idée : quelque chose qui marchait, ou devrait marcher, et ne marche pas. Ne rien créer, et renvoyer vers le modèle d'issue `bug` (`.github/ISSUE_TEMPLATE/bug.md`), qui demande les étapes pour reproduire le problème.
-
-Une idée de **nouveau projet**, et non une fonctionnalité de ce projet, relève de `/project-idea` à la racine de l'écosystème : le dire.
-
-## 2. Chercher les doublons
-
-Avant d'écrire, chercher les issues ouvertes proches, avec deux ou trois jeux de mots-clés tirés de l'idée :
-
-```
-gh issue list --state open --search '<mots-clés>' --json number,title,labels --limit 10
-```
-
-- **Une issue couvre déjà l'idée** : le dire, avec son numéro et son titre, et proposer de la compléter par un commentaire au lieu d'en créer une autre. Deux issues pour le même besoin finissent en deux branches concurrentes.
-- **Des issues voisines** : les citer dans les « Notes » du brouillon, pour que `/spec` les voie.
-- Rien de proche : continuer sans le mentionner longuement.
 
 ## 3. Jauger la taille
 
@@ -77,13 +77,15 @@ Montrer le brouillon (titre et corps) et **le faire valider**. Ses corrections s
 
 ```
 /idea : crée l'issue validée par l'utilisateur.
-1. gh issue create --title '<titre>' --body-file '<fichier>' --label feature
+1. gh issue create --title "<titre>" --body-file '<fichier>' --label feature
 2. Carte en « Idée » : pwsh -NoProfile -File .harness/tools/board.ps1 -Issue <n> -Status 'Idée'
 Rends le numéro et l'URL de l'issue. Si une étape échoue ou si un hook la refuse, arrête-toi et rapporte le message exact.
 ```
 
+- **Le titre entre guillemets doubles**, comme dans `/ship` : une apostrophe, courante en français (« Exporter l'historique »), fermerait une chaîne entre apostrophes et casserait la commande. Les guillemets doubles interprètent en revanche `"`, `$` et le backtick : un titre qui en contient se reformule sans eux.
+- **Le label `feature` absent** du dépôt fait échouer l'étape 1 : `scripts/github-setup.ps1`, à la racine de l'écosystème, pose les labels. Le signaler, et proposer de créer l'issue sans label en attendant.
 - **Plusieurs issues** (découpage accepté, ou plusieurs idées d'un coup) : un seul appel à `git-ops`, avec les deux étapes répétées pour chaque issue.
-- **Compléter une issue existante** (étape 2) : le brief devient `gh issue comment <n> --body-file '<fichier>'`, sans carte à déplacer.
+- **Compléter une issue existante** (étape 1) : le brief devient `gh issue comment <n> --body-file '<fichier>'`, sans carte à déplacer.
 - Si seule l'étape 2 échoue (pas de Project sur le compte, réseau…), l'issue existe : le signaler dans le compte rendu, sans recréer l'issue.
 - **Mode essai** : pas d'appel à `git-ops`. Écrire les brouillons et ces commandes dans le fichier d'essai.
 
