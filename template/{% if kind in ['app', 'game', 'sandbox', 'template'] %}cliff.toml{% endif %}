@@ -32,12 +32,12 @@ protect_breaking_commits = true
 tag_pattern = "v[0-9]+\\.[0-9]+\\.[0-9]+"
 sort_commits = "oldest"
 # Groupes de Keep a Changelog, dans leur ordre (le commentaire HTML fixe l'ordre et disparaît au rendu).
+# Security : le scope `security` d'un type publié (`fix(security): …`), pas un mot du corps du message.
 commit_parsers = [
     { message = "^chore\\(release\\)", skip = true },
-    { body = "(?i)security", group = "<!-- 5 -->Security" },
+    { message = "^(feat|fix|perf|refactor)\\(security\\)", group = "<!-- 5 -->Security" },
     { message = "^feat", group = "<!-- 0 -->Added" },
-    { message = "^(perf|refactor)", group = "<!-- 1 -->Changed" },
-    { message = "^revert", group = "<!-- 3 -->Removed" },
+    { message = "^(perf|refactor|revert)", group = "<!-- 1 -->Changed" },
     { message = "^fix", group = "<!-- 4 -->Fixed" },
     { message = "^(docs|test|build|ci|chore|style)", skip = true },
 ]

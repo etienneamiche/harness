@@ -106,6 +106,7 @@ Describe 'git-guard' {
         @{ cmd = 'git merge-base --is-ancestor v0.1.0 origin/develop' }
         @{ cmd = 'git merge-tree --write-tree main develop' }
     ) { (Invoke-Hook -Data (Bash $cmd)).Decision | Should -Be 'allow' }
+    It 'réserve aussi git commit-tree à git-ops' { (Invoke-Hook -Data (Bash 'git commit-tree HEAD^{tree} -p HEAD -m "fix: x (#1)"')).Decision | Should -Be 'deny' }
     It 'accepte le push d''une branche de feature' { (Invoke-Hook -Data (Bash 'git push -u origin feature/12-export' 'git-ops')).Decision | Should -Be 'allow' }
     It 'refuse gh pr create hors git-ops' { (Invoke-Hook -Data (Bash 'gh pr create --fill')).Decision | Should -Be 'deny' }
     It 'accepte gh pr create par git-ops' { (Invoke-Hook -Data (Bash 'gh pr create --fill' 'git-ops')).Decision | Should -Be 'allow' }

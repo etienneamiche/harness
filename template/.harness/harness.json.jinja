@@ -20,7 +20,7 @@
   },
 
   "restrictedCommands": {
-    "git\\s+(commit|push|merge)(?![\\w-])": ["git-ops"],
+    "git\\s+(commit|push)\\b|git\\s+merge(?![\\w-])": ["git-ops"],
     "git\\s+tag\\s+(-a|-s|-m|v?\\d)": ["git-ops"],
     "gh\\s+pr\\s+(create|edit|close|ready|reopen)\\b": ["git-ops"],
     "merge-pr\\.ps1": ["git-ops"],
