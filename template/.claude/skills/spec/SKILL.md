@@ -21,6 +21,8 @@ Chacun son rôle : **`architect`** (Opus) conçoit la spécification, **`git-ops
 
 ## 2. Faire concevoir la spécification par `architect`
 
+Noter d'abord l'état de la copie de travail : `git status --porcelain --untracked-files=all`. Il sert de point de comparaison après `architect`.
+
 Appeler le subagent `architect`, **sans paramètre `model`** (le hook `model-guard` le refuse). Brief :
 
 ```
@@ -40,7 +42,7 @@ Rends, sans rien écrire dans le dépôt :
 
 Relire ce qu'il rend avant de le montrer : chaque critère doit pouvoir se vérifier sans interprétation. « Le script est robuste » ne se vérifie pas ; « un CSV verrouillé est ignoré et signalé, les autres sont archivés » se vérifie. Reformuler ce qui doit l'être.
 
-Vérifier aussi qu'il n'a rien écrit : `git status --porcelain --untracked-files=all`. `architect` a les outils d'écriture et sa définition l'invite à écrire dans `docs/`. Un fichier apparu se signale à l'utilisateur, qui décide de son sort : laissé là, il bloquerait le `/feature` suivant comme du travail non commité.
+Vérifier aussi qu'il n'a rien écrit : relancer `git status --porcelain --untracked-files=all` et comparer avec l'état noté avant son appel. `architect` a les outils d'écriture et sa définition l'invite à écrire dans `docs/`. Seule la différence compte, car des modifications déjà présentes avant `/spec` appartiennent à l'utilisateur. Un fichier apparu ou modifié entre-temps se signale à l'utilisateur, qui décide de son sort : laissé là, il bloquerait le `/feature` suivant comme du travail non commité.
 
 ## 3. Faire trancher et valider
 
@@ -94,10 +96,21 @@ Si une étape échoue ou si un hook la refuse, arrête-toi et rapporte le messag
 ```
 
 - **Travail déjà commencé** : pas d'étape 2 du brief.
-- **Découpage accepté** : un premier appel à `git-ops` crée d'abord les nouvelles issues, pour que l'issue d'origine puisse citer leurs numéros. Pour chacune : `gh issue create --title "<titre>" --body-file '<fichier>' --label feature` puis `board.ps1 -Issue <m> -Status 'Idée'`, avec les numéros en retour. La session reporte ces numéros dans le Hors périmètre de l'issue d'origine (« Suite : #m, #p »), puis le brief ci-dessus la met à jour.
+- **Découpage accepté** : avant le brief ci-dessus, un premier appel à `git-ops` crée les nouvelles issues, pour que l'issue d'origine puisse citer leurs numéros. Le corps validé de chaque partie va dans `Join-Path ([IO.Path]::GetTempPath()) "spec-<n>-partie-<k>.md"` (k = 2, 3… : la partie 1 reste dans #<n>). Brief :
+
+  ```
+  /spec de l'issue #<n> : découpage validé par l'utilisateur. Crée les nouvelles issues, dans l'ordre.
+  Pour chaque partie k :
+  1. gh issue create --title "<titre de la partie k>" --body-file '<fichier de la partie k>' --label feature
+  2. pwsh -NoProfile -File .harness/tools/board.ps1 -Issue <numéro créé> -Status 'Idée'
+  Si une création échoue ou si un hook la refuse, arrête-toi. Si seul board.ps1 échoue, continue avec la partie suivante.
+  Rends, pour chaque partie, le numéro créé (ou « non créée ») et le résultat de board.ps1, avec le message exact de chaque échec.
+  ```
+
+  La session reporte les numéros dans le Hors périmètre de l'issue d'origine (« Suite : #m, #p »), puis le brief ci-dessus la met à jour. Une partie non créée ne se rattrape pas en relançant tout l'appel : les autres existent déjà, une relance les créerait en double. Le dire à l'utilisateur, et ne recréer que la partie manquante, avec son accord. Une carte non placée se signale dans le compte rendu.
 - **Le titre entre guillemets doubles**, comme dans `/ship` : une apostrophe, courante en français, fermerait une chaîne entre apostrophes. Les guillemets doubles interprètent en revanche `$`, le backtick et tout guillemet double, droit (`"`) ou typographique (`“ ”`, que pwsh lit comme `"`) : un titre qui en contient se reformule sans eux, avec « » si besoin.
 - Si seule l'étape 2 du brief échoue (pas de Project sur le compte, réseau…), l'issue est à jour : le signaler, sans refaire l'étape 1 du brief.
-- **Mode essai** : pas d'appel à `git-ops`. Écrire le corps et ces commandes dans le fichier d'essai.
+- **Mode essai** : pas d'appel à `git-ops`. Écrire le corps et ces commandes dans le fichier d'essai, et pour un découpage, le titre et le corps de chaque nouvelle issue avec le brief qui les aurait créées.
 
 ## 5. Rendre compte et proposer `/feature`
 
@@ -107,7 +120,7 @@ Si une étape échoue ou si un hook la refuse, arrête-toi et rapporte le messag
 Critères : <nombre>
 Taille estimée : <~n lignes>
 Décisions : <option retenue, ADR prévu | aucune>
-Découpage : <#m, #p créées en « Idée » | aucun>
+Découpage : <#m, #p créées en « Idée », carte non placée ou partie non créée précisée | aucun>
 Manques de l'écosystème : <… , pour /evolve | aucun>
 Questions ouvertes : <… | aucune>
 ```
