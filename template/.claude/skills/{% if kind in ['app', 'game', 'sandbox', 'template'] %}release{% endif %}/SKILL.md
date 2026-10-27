@@ -20,13 +20,14 @@ Chacun son rôle : la session principale **prépare** (version, changelog, contr
   - `develop` existe : **gitflow**. La release part de `origin/develop`, sa PR va dans `main` et se fusionne en `merge`, puis `main` est reporté dans `develop`.
   - Pas de `develop` : **`main` seul** (template). La release part de `origin/main`, et sa PR se fusionne en squash.
 - **Une release inachevée** se reprend au lieu d'en commencer une autre. Ces contrôles se font à chaque `/release`, même sans branche de release : en squash, `merge-pr.ps1` supprime la branche à la fusion. Reprendre au premier qui échoue :
-  1. **La dernière version du changelog est taguée** : la première ligne `## [X.Y.Z]` de `git show origin/main:CHANGELOG.md` a son tag (`git ls-remote --tags origin vX.Y.Z`). Sinon, la release X.Y.Z est fusionnée mais pas taguée : étape 6, avec sa PR (`gh pr list --state merged --head release/X.Y.Z --json number,mergeCommit`, ou `hotfix/X.Y.Z`).
+  1. **La dernière version du changelog est taguée** : la première ligne `## [X.Y.Z]` de `git show origin/main:CHANGELOG.md` a son tag (`git ls-remote --tags origin vX.Y.Z`). Pas de `CHANGELOG.md` sur `main`, ou aucune section versionnée : aucune release n'a encore été faite par `/release`, rien à contrôler ici. Sinon, la release X.Y.Z est fusionnée mais pas taguée : étape 6, avec sa PR (`gh pr list --state merged --head release/X.Y.Z --json number,mergeCommit`, ou `hotfix/X.Y.Z`). **Sans PR de release fusionnée** (CHANGELOG écrit à la main, tags sans `v`…), il n'y a pas de commit à taguer : s'arrêter et montrer l'écart à l'utilisateur, sans rien taguer.
   2. **Ce tag a sa release GitHub** (`gh release view vX.Y.Z`). Sinon : étape 6, dernière commande.
   3. **En gitflow, `main` est dans `develop`** (`git merge-base --is-ancestor origin/main origin/develop`). Sinon, le report de la dernière release manque : étape 7. Sans lui, la release suivante ne verrait pas le dernier tag depuis `develop`, et git-cliff remettrait dans le changelog des commits déjà publiés.
-  4. **Une branche `release/*` ou `hotfix/*`** existe (`git ls-remote --heads origin 'release/*' 'hotfix/*'`), avec sa PR (`gh pr list --state all --head <branche> --json number,state`) :
+  4. **Aucune branche `release/*` ou `hotfix/*` n'est en cours** : pour chaque branche (`git ls-remote --heads origin 'release/*' 'hotfix/*'`), lire sa PR (`gh pr list --state all --head <branche> --json number,state`) :
      - `release/*` sans PR : étape 4, à partir du commit du changelog ;
      - `hotfix/*` sans PR : finir le hotfix (voir *Hotfix*) ;
-     - PR ouverte : étape 5.
+     - PR ouverte : étape 5 ;
+     - PR fusionnée : la branche n'est plus en cours, les contrôles 1 à 3 couvrent la suite. Proposer sa suppression, comme à l'étape 7, et continuer.
 
   Une reprise à l'étape 5 ou au-delà ne déplace pas la copie : la suite du point 1 ne s'applique qu'à une release qui commence.
 - **La copie de travail** (sauf pour finir un hotfix) doit être propre (`git status --porcelain --untracked-files=all` vide) : la release se prépare sur le code exact de la source, pas sur un travail en cours. Sinon, s'arrêter et le dire. Noter la branche courante (`git branch --show-current`), puis se placer sur la source : `git switch --detach origin/<source>`. **Chaque fois que le skill s'arrête**, en essai comme en vrai, et à la fin de la release, remettre la copie sur cette branche (`git switch <branche>`).
