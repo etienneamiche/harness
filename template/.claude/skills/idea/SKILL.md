@@ -82,11 +82,11 @@ Montrer le brouillon (titre et corps) et **le faire valider**. Ses corrections s
 Rends le numéro et l'URL de l'issue. Si une étape échoue ou si un hook la refuse, arrête-toi et rapporte le message exact.
 ```
 
-- **Le titre entre guillemets doubles**, comme dans `/ship` : une apostrophe, courante en français (« Exporter l'historique »), fermerait une chaîne entre apostrophes et casserait la commande. Les guillemets doubles interprètent en revanche `"`, `$` et le backtick : un titre qui en contient se reformule sans eux.
-- **Le label `feature` absent** du dépôt fait échouer l'étape 1 : `scripts/github-setup.ps1`, à la racine de l'écosystème, pose les labels. Le signaler, et proposer de créer l'issue sans label en attendant.
+- **Le titre entre guillemets doubles**, comme dans `/ship` : une apostrophe, courante en français (« Exporter l'historique »), fermerait une chaîne entre apostrophes et casserait la commande. Les guillemets doubles interprètent en revanche `$`, le backtick et tout guillemet double, droit (`"`) ou typographique (`“ ”`, que pwsh lit comme `"`) : un titre qui en contient se reformule sans eux, avec « » si besoin.
+- **Le label `feature` absent** du dépôt fait échouer l'étape 1 du brief : `scripts/github-setup.ps1`, à la racine de l'écosystème, pose les labels. Le signaler, et proposer de créer l'issue sans label en attendant.
 - **Plusieurs issues** (découpage accepté, ou plusieurs idées d'un coup) : un seul appel à `git-ops`, avec les deux étapes répétées pour chaque issue.
-- **Compléter une issue existante** (étape 1) : le brief devient `gh issue comment <n> --body-file '<fichier>'`, sans carte à déplacer.
-- Si seule l'étape 2 échoue (pas de Project sur le compte, réseau…), l'issue existe : le signaler dans le compte rendu, sans recréer l'issue.
+- **Compléter une issue existante** (section 1, « Situer l'idée ») : le brief devient `gh issue comment <n> --body-file '<fichier>'`, sans carte à déplacer.
+- Si seule l'étape 2 du brief échoue (pas de Project sur le compte, réseau…), l'issue existe : le signaler dans le compte rendu, sans recréer l'issue.
 - **Mode essai** : pas d'appel à `git-ops`. Écrire les brouillons et ces commandes dans le fichier d'essai.
 
 ## 6. Rendre compte et proposer `/spec`
