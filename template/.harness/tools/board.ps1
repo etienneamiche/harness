@@ -1,4 +1,5 @@
 #Requires -Version 7.4
+
 <#
 .SYNOPSIS
     Place la carte d'une issue dans une colonne du GitHub Project de l'écosystème.

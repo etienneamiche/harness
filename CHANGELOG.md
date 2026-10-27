@@ -19,6 +19,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versions : [s
 ### Corrigé
 - `git-guard` ne prend plus le texte d'un message de commit pour des options : un corps qui cite `-Days` ou `--no-verify` n'est plus refusé comme un `git commit -a`. `git commit --all` est refusé, comme `-a`.
 - `git-guard` ne prend plus `git merge-base` ni `git merge-tree`, des lectures, pour une fusion réservée à `git-ops`.
+- `Get-Help` affiche enfin l'aide des outils du harness (`doctor`, `post-install`, `board`, `merge-pr`, `write-manifest`, `tools/test.ps1`) : leur bloc d'aide, collé à la ligne `#Requires`, n'était pas reconnu. `write-manifest.ps1` reçoit une aide, et un autotest vérifie celle de chaque outil.
 
 ### Modifié
 - Convention de branches : `chore/harness-vX.Y.Z` pour une mise à jour du harness.

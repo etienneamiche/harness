@@ -10,6 +10,7 @@ BeforeDiscovery {
     $Gitflow = [bool] $cfg.requireIssueRef
     $HasReact = Test-Path (Join-Path $PSScriptRoot '..' 'modules' 'react')
     $HasDotnet = Test-Path (Join-Path $PSScriptRoot '..' 'modules' 'dotnet')
+    $Tools = @(Get-ChildItem (Join-Path $PSScriptRoot '..' 'tools') -File -Filter '*.ps1' | ForEach-Object { @{ name = $_.Name; path = $_.FullName } })
 }
 
 BeforeAll {
@@ -489,4 +490,12 @@ Describe 'pre-commit (gitleaks)' {
         Test-PreCommit | Should -Be 0
     }
 }
+}
+
+Describe 'outils du harness : aide lisible par Get-Help' {
+    # Un bloc <# #> collé à la ligne #Requires n'est pas reconnu comme une aide : Get-Help ne rend que la syntaxe.
+    It '<name> a un .SYNOPSIS que Get-Help affiche' -ForEach $Tools {
+        (Get-Help $path).Synopsis | Should -Not -BeNullOrEmpty
+        (Get-Help $path).Synopsis | Should -Not -Match '\.ps1\b.*\['
+    }
 }

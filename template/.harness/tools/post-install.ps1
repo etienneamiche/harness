@@ -1,4 +1,5 @@
 #Requires -Version 7.4
+
 <#
 .SYNOPSIS
     Finalise l'installation ou la mise à jour du harness dans un projet.
