@@ -24,11 +24,16 @@ Le script lit, sans rien modifier, les transcripts Claude Code (sous-agents comp
 - les **refus de hooks**, groupés par règle et par raison, avec leur nombre de sessions ;
 - les **échecs répétés** : la même commande en échec au moins deux fois ;
 - les messages de l'utilisateur qui ressemblent à une **correction** (« non, … », « je t'ai dit… ») ;
-- les **constats d'`auditor`** (B1, I1, M1…) des dernières PR.
+- les **constats d'`auditor`** (B1, I1, M1…) des PR fusionnées sur la période.
 
 `-Days` vaut 14 par défaut, ou le nombre de jours donné en argument. `-NoPrs` se passe de `gh`. La conversation en cours compte aussi : ce que l'utilisateur vient de dire sur ce qui l'a gêné est une preuve.
 
-**« Aucun message de ce projet sur la période »** veut dire que la rétro n'a rien lu, pas que tout va bien. Le dire tel quel, montrer les dossiers lus, et proposer `-Path <dossier>` ou une période plus longue. Ne jamais présenter ce cas comme une rétro sans accroc.
+**« Aucun message de ce projet sur la période »** veut dire que la rétro n'a rien lu, pas que tout va bien. Le dire tel quel, montrer les dossiers lus, et proposer le bon levier :
+- une période plus longue (`-Days`) ;
+- le projet a été déplacé ou renommé, ou ses sessions tournaient depuis un autre chemin (un autre clone, WSL) : `-Root <ancien chemin>`, car seuls les messages dont le dossier de travail est sous la racine comptent ;
+- les transcripts sont rangés ailleurs, par exemple des sessions ouvertes dans un sous-dossier du projet (`~/.claude/projects/<racine>-<sous-dossier>`, non lu par défaut) : `-Path <dossier>`.
+
+Ne jamais présenter ce cas comme une rétro sans accroc.
 
 Le repérage des corrections se fait sur les premiers mots : relire chacune dans son contexte avant d'en tirer quoi que ce soit (`Select-String` sur le transcript, autour de la phrase citée).
 

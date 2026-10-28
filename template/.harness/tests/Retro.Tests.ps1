@@ -92,6 +92,11 @@ Describe 'scan-transcripts (/retro)' {
         Invoke-Scan (New-Said 'non, rien' @{ cwd = (Join-Path $TestDrive 'other') }) | Should -Match 'Aucun message de ce projet sur la période'
     }
 
+    It 'ne compte pas une ligne technique comme un message du projet' {
+        $blob = New-Line @{ type = 'api-request-blob'; message = @{ role = 'user'; content = 'non, technique' } }
+        Invoke-Scan $blob | Should -Match 'Aucun message de ce projet sur la période'
+    }
+
     It 'masque un jeton reconnu par secretTokens' {
         $token = 'ghp_' + ('a' * 36)
         $out = Invoke-Scan (New-Run 't10' "gh auth login --with-token $token" $Guard)

@@ -117,7 +117,8 @@ foreach ($file in $files) {
     $inOwnDir = $file.FullName.StartsWith($ownDir, 'OrdinalIgnoreCase')
     foreach ($line in [IO.File]::ReadLines($file.FullName)) {
         $o = try { $line | ConvertFrom-Json -Depth 20 } catch { $null }
-        if (-not $o -or -not $o.message) { continue }
+        # Seuls les échanges comptent : les lignes techniques (api-request-blob…) ne sont pas des messages.
+        if (-not $o -or -not $o.message -or $o.type -notin 'user', 'assistant') { continue }
         if ($o.uuid -and -not $seen.Add([string] $o.uuid)) { continue }
         if ($o.timestamp -and ([datetime] $o.timestamp) -lt $since) { continue }
         # Un message sans cwd n'est gardé que dans le dossier propre au projet.
@@ -169,7 +170,7 @@ $out.Add("Projet : ``$Root``. Transcripts lus : $dirs.")
 $out.Add("$($files.Count) fichier(s), $($sessions.Count) session(s), $messages message(s) du projet.")
 if (-not $messages) {
     $out.Add('')
-    $out.Add("**Aucun message de ce projet sur la période** : la rétro n'a pas de matière tirée des transcripts. Ce n'est pas le signe que tout va bien. Vérifier le dossier des transcripts (``-Path``) ou la période (``-Days``).")
+    $out.Add("**Aucun message de ce projet sur la période** : la rétro n'a pas de matière tirée des transcripts. Ce n'est pas le signe que tout va bien. Vérifier la période (``-Days``), l'ancien chemin d'un projet déplacé ou lancé ailleurs (``-Root``), ou le dossier des transcripts (``-Path``).")
 }
 
 $out.Add(''); $out.Add('## Refus de hooks')
