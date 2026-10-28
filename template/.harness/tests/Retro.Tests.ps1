@@ -6,7 +6,10 @@
 # Lancés par `.harness/tools/doctor.ps1 -Deep`.
 
 BeforeAll {
-    $script:Scan = Join-Path $PSScriptRoot '..' '..' '.claude' 'skills' 'retro' 'scripts' 'scan-transcripts.ps1'
+    # La sortie du script, en UTF-8, se décode avec l'encodage de la console : sans ceci, une console
+    # Windows en page 850 abîme les accents, et les tests échouent hors de `doctor -Deep`.
+    [Console]::OutputEncoding = [Text.Encoding]::UTF8
+    $script:Scan =Join-Path $PSScriptRoot '..' '..' '.claude' 'skills' 'retro' 'scripts' 'scan-transcripts.ps1'
     $script:Guard = 'PreToolUse:PowerShell hook error: harness/git-guard : la session principale ne peut pas lancer cette commande, réservée à : git-ops.'
 
     # Un projet simulé, avec un dépôt imbriqué et les motifs de secrets du harness.
