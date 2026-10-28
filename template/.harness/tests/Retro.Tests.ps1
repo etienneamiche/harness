@@ -97,7 +97,8 @@ Describe 'scan-transcripts (/retro)' {
         Invoke-Scan $blob | Should -Match 'Aucun message de ce projet sur la période'
     }
 
-    It 'masque un jeton reconnu par secretTokens' {
+    It 'masque un jeton reconnu par les secretTokens du projet qui porte le script' {
+        # Dans un projet généré, ce sont ceux de son propre .harness/harness.json, lus en premier.
         $token = 'ghp_' + ('a' * 36)
         $out = Invoke-Scan (New-Run 't10' "gh auth login --with-token $token" $Guard)
         $out | Should -Match '\[secret masqué\]'
@@ -114,6 +115,31 @@ Describe 'scan-transcripts (/retro)' {
         $out | Should -Match 'gh auth login'
         $out | Should -Not -Match $token
         $out | Should -Not -Match 'Masquage des secrets inactif'
+    }
+
+    Context 'script hors d''un projet du harness' {
+        BeforeAll {
+            # Une copie du script dans une arborescence sans .harness : seul -Root peut fournir les motifs.
+            $script:Iso = Join-Path $TestDrive 'iso' '.claude' 'skills' 'retro' 'scripts' 'scan-transcripts.ps1'
+            New-Item -ItemType Directory -Force (Split-Path $Iso) | Out-Null
+            Copy-Item $Scan $Iso
+            $script:IsoToken = 'ghp_' + ('c' * 36)
+            $script:IsoDir = Join-Path $TestDrive 'iso-transcripts'; New-Item -ItemType Directory -Force $IsoDir | Out-Null
+            ((New-Run 't12' "gh auth login --with-token $IsoToken" $Guard) -join "`n") | Set-Content -Encoding utf8 (Join-Path $IsoDir 'a.jsonl')
+        }
+
+        It 'se replie sur les secretTokens de -Root' {
+            $out = (pwsh -NoProfile -NonInteractive -File $Iso -Path $IsoDir -Root $Proj -Days 7 -NoPrs) -join "`n"
+            $out | Should -Match '\[secret masqué\]'
+            $out | Should -Not -Match $IsoToken
+            $out | Should -Not -Match 'Masquage des secrets inactif'
+        }
+
+        It 'dit que le masquage est inactif quand aucun motif n''est trouvé' {
+            $bare = Join-Path $TestDrive 'bare'; New-Item -ItemType Directory -Force $bare | Out-Null
+            $out = (pwsh -NoProfile -NonInteractive -File $Iso -Path $IsoDir -Root $bare -Days 7 -NoPrs) -join "`n"
+            $out | Should -Match 'Masquage des secrets inactif'
+        }
     }
 
     It 'extrait les constats d''auditor, titre en gras compris' {
