@@ -492,6 +492,63 @@ Describe 'pre-commit (gitleaks)' {
 }
 }
 
+Describe 'doctor -Fix' {
+    BeforeAll {
+        # Faux claude et codegraph en tête du PATH : -Fix n'installe rien pour de vrai et ne crée aucun index,
+        # et chaque appel est noté. Un HOME vide donne un registre de plugins vide : les plugins du template manquent.
+        $script:Fake = Join-Path ([IO.Path]::GetTempPath()) "harness-fake-$([guid]::NewGuid())"
+        $script:Calls = Join-Path $script:Fake 'calls.log'
+        New-Item -ItemType Directory -Force (Join-Path $script:Fake 'bin'), (Join-Path $script:Fake 'home') | Out-Null
+        foreach ($tool in 'claude', 'codegraph') {
+            Set-Content (Join-Path $script:Fake 'bin' "$tool.ps1") "Add-Content '$($script:Calls)' ('$tool ' + (`$args -join ' '))"
+        }
+        # Une copie du projet, avec un fichier du harness modifié et le bloc de .gitignore retiré.
+        function New-ProjectCopy {
+            $copy = Join-Path $script:Fake "project-$([guid]::NewGuid())"
+            New-Item -ItemType Directory -Force $copy | Out-Null
+            foreach ($item in '.harness', '.claude', 'CLAUDE.md', '.copier-answers.harness.yml') {
+                Copy-Item (Join-Path $script:Root $item) $copy -Recurse
+            }
+            Set-Content (Join-Path $copy '.gitignore') 'node_modules/'
+            git -C $copy init -q -b main
+            Add-Content (Join-Path $copy '.harness' 'hooks' 'rules' 'PreToolUse' 'secret-guard.ps1') '# modifié à la main'
+            $copy
+        }
+        function Invoke-DoctorFix([string] $Project, [hashtable] $Env) {
+            $fakeHome = Join-Path $script:Fake 'home'
+            $vars = @{ PATH = (Join-Path $script:Fake 'bin') + [IO.Path]::PathSeparator + $env:PATH; HOME = $fakeHome; USERPROFILE = $fakeHome } + $Env
+            $saved = @{}
+            foreach ($k in $vars.Keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k); [Environment]::SetEnvironmentVariable($k, $vars[$k]) }
+            Remove-Item $script:Calls -ErrorAction SilentlyContinue
+            try { pwsh -NoProfile -NonInteractive -File (Join-Path $Project '.harness' 'tools' 'doctor.ps1') -Fix -Offline *>&1 | Out-String }
+            finally { foreach ($k in $saved.Keys) { [Environment]::SetEnvironmentVariable($k, $saved[$k]) } }
+        }
+        function Get-Calls { if (Test-Path $script:Calls) { Get-Content $script:Calls } else { @() } }
+
+        $script:Copy = New-ProjectCopy
+        $script:Manifest = Join-Path $script:Copy '.harness' 'manifest.json'
+        $script:ManifestBefore = Get-FileHash $script:Manifest
+        $script:Output = Invoke-DoctorFix $script:Copy @{ HARNESS_SKIP_PLUGINS = '1' }
+        $script:SkipCalls = @(Get-Calls)
+    }
+    AfterAll { Remove-Item $script:Fake -Recurse -Force -ErrorAction SilentlyContinue }
+
+    It 'répare le bloc de .gitignore' {
+        Get-Content (Join-Path $script:Copy '.gitignore') -Raw | Should -Match '# >>> harness'
+    }
+    It 'ne réécrit pas le manifeste : un fichier du harness modifié reste visible' {
+        (Get-FileHash $script:Manifest).Hash | Should -Be $script:ManifestBefore.Hash
+        $script:Output | Should -Match 'fichiers du harness\s+FAIL'
+    }
+    It 'respecte HARNESS_SKIP_PLUGINS : aucun plugin installé' {
+        $script:SkipCalls | Where-Object { $_ -match '^claude plugin install' } | Should -BeNullOrEmpty
+    }
+    It 'installe les plugins manquants sans HARNESS_SKIP_PLUGINS (le faux claude est bien appelé)' {
+        Invoke-DoctorFix (New-ProjectCopy) @{ HARNESS_SKIP_PLUGINS = $null } | Out-Null
+        Get-Calls | Where-Object { $_ -match '^claude plugin install \S+ --scope project' } | Should -Not -BeNullOrEmpty
+    }
+}
+
 Describe 'outils du harness : aide lisible par Get-Help' {
     # Un bloc <# #> collé à la ligne #Requires n'est pas reconnu comme une aide : Get-Help ne rend que la syntaxe.
     It '<name> a un .SYNOPSIS que Get-Help affiche' -ForEach $Tools {
