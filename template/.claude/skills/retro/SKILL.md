@@ -30,7 +30,8 @@ Le script lit, sans rien modifier, les transcripts Claude Code (sous-agents comp
 
 **« Aucun message de ce projet sur la période »** veut dire que la rétro n'a rien lu, pas que tout va bien. Le dire tel quel, montrer les dossiers lus, et proposer le bon levier :
 - une période plus longue (`-Days`) ;
-- le projet a été déplacé ou renommé, ou ses sessions tournaient depuis un autre chemin (un autre clone, WSL) : `-Root <ancien chemin>`, car seuls les messages dont le dossier de travail est sous la racine comptent ;
+- le projet a été déplacé ou renommé, ou ses sessions tournaient depuis un autre clone : `-Root <ancien chemin>`, car seuls les messages dont le dossier de travail est sous la racine comptent ;
+- des sessions lancées sous WSL : `-Root` (le chemin vu depuis WSL) **et** `-Path` (le dossier de transcripts du `~/.claude` de WSL) ensemble ;
 - les transcripts sont rangés ailleurs, par exemple des sessions ouvertes dans un sous-dossier du projet (`~/.claude/projects/<racine>-<sous-dossier>`, non lu par défaut) : `-Path <dossier>`.
 
 Ne jamais présenter ce cas comme une rétro sans accroc.

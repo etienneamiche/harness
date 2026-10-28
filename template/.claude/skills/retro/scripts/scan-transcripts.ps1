@@ -84,10 +84,15 @@ function Test-InProject([string] $Cwd) {
 }
 
 # Les secrets ne quittent pas le poste : les motifs du harness masquent les jetons dans les extraits.
+# Ils se lisent d'abord dans le projet qui porte ce script (.claude/skills/retro/scripts → 4 niveaux) :
+# -Root peut désigner un ancien chemin, où .harness n'existe plus.
 $secretPatterns = @()
-$harnessJson = Join-Path $Root '.harness' 'harness.json'
-if (Test-Path $harnessJson) {
-    $tokens = (Get-Content $harnessJson -Raw | ConvertFrom-Json).secretTokens
+$harnessJson = @(
+    (Join-Path $PSScriptRoot '..' '..' '..' '..' '.harness' 'harness.json')
+    (Join-Path $Root '.harness' 'harness.json')
+) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+if ($harnessJson) {
+    $tokens = (Get-Content -LiteralPath $harnessJson -Raw | ConvertFrom-Json).secretTokens
     if ($tokens) { $secretPatterns = @($tokens.PSObject.Properties | ForEach-Object Value) }
 }
 
@@ -133,7 +138,6 @@ foreach ($file in $files) {
             }
             continue
         }
-        if ($o.type -ne 'user') { continue }
         $results = @(@($content) | Where-Object { $_ -isnot [string] -and $_.type -eq 'tool_result' })
         foreach ($r in $results | Where-Object { $_.is_error }) {
             $text = Get-Text $r.content
@@ -168,6 +172,7 @@ $out.Add('')
 $dirs = if ($Path) { ($Path | ForEach-Object { '`' + $_ + '`' }) -join ', ' } else { 'aucun dossier trouvé' }
 $out.Add("Projet : ``$Root``. Transcripts lus : $dirs.")
 $out.Add("$($files.Count) fichier(s), $($sessions.Count) session(s), $messages message(s) du projet.")
+if (-not $secretPatterns) { $out.Add("**Masquage des secrets inactif** : aucun ``.harness/harness.json`` avec ``secretTokens`` trouvé. Relire les extraits avant d'en citer un.") }
 if (-not $messages) {
     $out.Add('')
     $out.Add("**Aucun message de ce projet sur la période** : la rétro n'a pas de matière tirée des transcripts. Ce n'est pas le signe que tout va bien. Vérifier la période (``-Days``), l'ancien chemin d'un projet déplacé ou lancé ailleurs (``-Root``), ou le dossier des transcripts (``-Path``).")

@@ -104,6 +104,18 @@ Describe 'scan-transcripts (/retro)' {
         $out | Should -Not -Match $token
     }
 
+    It 'masque un jeton même quand -Root désigne un ancien chemin sans .harness' {
+        # Les motifs se lisent alors dans le projet qui porte le script.
+        $moved = Join-Path $TestDrive 'old' 'location'
+        $token = 'ghp_' + ('b' * 36)
+        $dir = Join-Path $TestDrive 'moved'; New-Item -ItemType Directory -Force $dir | Out-Null
+        ((New-Run 't11' "gh auth login --with-token $token" $Guard $true @{ cwd = $moved }) -join "`n") | Set-Content -Encoding utf8 (Join-Path $dir 'a.jsonl')
+        $out = (pwsh -NoProfile -NonInteractive -File $Scan -Path $dir -Root $moved -Days 7 -NoPrs) -join "`n"
+        $out | Should -Match 'gh auth login'
+        $out | Should -Not -Match $token
+        $out | Should -Not -Match 'Masquage des secrets inactif'
+    }
+
     It 'extrait les constats d''auditor, titre en gras compris' {
         $body = "# Audit`n`n**I1. Le préfixe ``**security**:`` est redondant** — ``cliff.toml:22```n`n**M2. Une autre chose** — ``x.ps1:1```n`n<!-- auditor: sha=abc1234 verdict=changes -->"
         $json = Join-Path $TestDrive 'prs.json'
