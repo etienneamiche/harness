@@ -492,6 +492,40 @@ Describe 'pre-commit (gitleaks)' {
 }
 }
 
+Describe 'doctor -Fix' {
+    BeforeAll {
+        # Une copie du projet, avec un fichier du harness modifié et le bloc de .gitignore retiré.
+        $script:Copy = Join-Path ([IO.Path]::GetTempPath()) "harness-doctor-$([guid]::NewGuid())"
+        New-Item -ItemType Directory -Force $script:Copy | Out-Null
+        foreach ($item in '.harness', '.claude', 'CLAUDE.md', '.copier-answers.harness.yml') {
+            Copy-Item (Join-Path $script:Root $item) $script:Copy -Recurse
+        }
+        Set-Content (Join-Path $script:Copy '.gitignore') 'node_modules/'
+        git -C $script:Copy init -q -b main
+        Add-Content (Join-Path $script:Copy '.harness' 'hooks' 'rules' 'PreToolUse' 'secret-guard.ps1') '# modifié à la main'
+        $script:Manifest = Join-Path $script:Copy '.harness' 'manifest.json'
+        $script:ManifestBefore = Get-FileHash $script:Manifest
+        # Sans claude ni codegraph dans le PATH : -Fix n'installe aucun plugin et ne crée aucun index.
+        $skip = @('claude', 'codegraph') | ForEach-Object { Get-Command $_ -ErrorAction SilentlyContinue } | ForEach-Object { (Split-Path $_.Source).TrimEnd('\', '/') }
+        $path = (($env:PATH -split [IO.Path]::PathSeparator) | Where-Object { $_ -and $skip -notcontains $_.TrimEnd('\', '/') }) -join [IO.Path]::PathSeparator
+        $script:Output = pwsh -NoProfile -NonInteractive -Command {
+            param($Doctor, $PathValue)
+            $env:PATH = $PathValue
+            $env:HARNESS_SKIP_PLUGINS = '1'
+            & $Doctor -Fix -Offline
+        } -args (Join-Path $script:Copy '.harness' 'tools' 'doctor.ps1'), $path *>&1 | Out-String
+    }
+    AfterAll { Remove-Item $script:Copy -Recurse -Force -ErrorAction SilentlyContinue }
+
+    It 'répare le bloc de .gitignore' {
+        Get-Content (Join-Path $script:Copy '.gitignore') -Raw | Should -Match '# >>> harness'
+    }
+    It 'ne réécrit pas le manifeste : un fichier du harness modifié reste visible' {
+        (Get-FileHash $script:Manifest).Hash | Should -Be $script:ManifestBefore.Hash
+        $script:Output | Should -Match 'fichiers du harness\s+FAIL'
+    }
+}
+
 Describe 'outils du harness : aide lisible par Get-Help' {
     # Un bloc <# #> collé à la ligne #Requires n'est pas reconnu comme une aide : Get-Help ne rend que la syntaxe.
     It '<name> a un .SYNOPSIS que Get-Help affiche' -ForEach $Tools {
