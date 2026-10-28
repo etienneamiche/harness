@@ -20,13 +20,15 @@ Chacun son rôle : la session principale relève et trie, l'**utilisateur** vali
 pwsh -NoProfile -File .claude/skills/retro/scripts/scan-transcripts.ps1 -Days <n>
 ```
 
-Le script lit, sans rien modifier, les transcripts Claude Code du projet (sous-agents compris) et les dernières PR fusionnées. Il rend :
+Le script lit, sans rien modifier, les transcripts Claude Code (sous-agents compris) et les PR fusionnées sur la période. Il ne garde que les messages du projet, d'après leur dossier de travail : les sessions ouvertes depuis un dossier parent comptent, celles d'un autre dépôt rangé sous la racine non. Une session reprise n'est comptée qu'une fois. Il rend :
 - les **refus de hooks**, groupés par règle et par raison, avec leur nombre de sessions ;
 - les **échecs répétés** : la même commande en échec au moins deux fois ;
 - les messages de l'utilisateur qui ressemblent à une **correction** (« non, … », « je t'ai dit… ») ;
 - les **constats d'`auditor`** (B1, I1, M1…) des dernières PR.
 
 `-Days` vaut 14 par défaut, ou le nombre de jours donné en argument. `-NoPrs` se passe de `gh`. La conversation en cours compte aussi : ce que l'utilisateur vient de dire sur ce qui l'a gêné est une preuve.
+
+**« Aucun message de ce projet sur la période »** veut dire que la rétro n'a rien lu, pas que tout va bien. Le dire tel quel, montrer les dossiers lus, et proposer `-Path <dossier>` ou une période plus longue. Ne jamais présenter ce cas comme une rétro sans accroc.
 
 Le repérage des corrections se fait sur les premiers mots : relire chacune dans son contexte avant d'en tirer quoi que ce soit (`Select-String` sur le transcript, autour de la phrase citée).
 
@@ -40,8 +42,15 @@ Pour chaque candidat, se demander d'abord **si c'est un problème**, puis **où 
   - un échec dû à l'environnement du moment (réseau, limite d'usage) ;
   - un constat d'`auditor` corrigé dans sa PR, qui ne revient nulle part ailleurs.
 - **Propre au projet → règle d'`AGENTS.md`**. C'est une convention que l'agent ignorait et que l'utilisateur a dû rappeler (un dossier, un nom, une commande du projet), ou un piège propre à ce code. Vérifier d'abord qu'`AGENTS.md` ne le dit pas déjà : si la règle existe mais n'a pas suffi, la reformuler plutôt qu'en ajouter une autre. Rédiger la règle telle qu'elle sera écrite : une phrase impérative, avec sa raison.
-- **Commun à tous les projets → issue `harness-update`** sur le dépôt `harness`. C'est le cas d'un hook qui refuse une commande légitime (un faux positif, qui revient d'une session à l'autre), d'un skill qui oublie une étape, ou d'un même constat d'`auditor` dans plusieurs PR, qui trahit un manque du skill ou des conventions. Chercher les doublons : `gh issue list -R <propriétaire>/harness --state open --search "<mots-clés>"`. Une issue qui existe déjà reçoit la preuve nouvelle en commentaire, au lieu d'un doublon.
+- **Commun à tous les projets → issue `harness-update`** sur le dépôt `harness`. C'est le cas d'un hook qui refuse une commande légitime (un faux positif, qui revient d'une session à l'autre), d'un skill qui oublie une étape, ou d'un même constat d'`auditor` dans plusieurs PR, qui trahit un manque du skill ou des conventions.
 - **Manque de l'écosystème → issue pour `/evolve`**, sur le dépôt `services`. C'est le cas d'une techno ou d'un service qu'aucun module ne couvre, et que le travail a dû contourner. Ne pas proposer de contournement local.
+
+**Chercher les doublons avant de proposer quoi que ce soit.** Deux rétros rapprochées lisent les mêmes jours : une règle validée la première fois attend encore dans une issue ouverte, pas encore livrée par `/feature`, donc absente d'`AGENTS.md`. Chercher dans les issues ouvertes du dépôt visé, avec des mots-clés du constat :
+- règle d'`AGENTS.md` : `gh issue list --state open --search "AGENTS.md in:title <mots-clés>"` ;
+- `harness-update` : `gh issue list -R <propriétaire>/harness --state open --search "<mots-clés>"` ;
+- `/evolve` : `gh issue list -R <propriétaire>/services --state open --search "<mots-clés>"`.
+
+Une issue qui existe déjà n'est pas recréée. Si la preuve est nouvelle, elle va en commentaire. Sinon, le constat est écarté en le disant (« déjà ouverte : #n »). Lire les commentaires de l'issue avant d'en ajouter un : une preuve déjà citée ne se répète pas.
 
 Le propriétaire des dépôts se lit par `gh repo view --json owner --jq .owner.login`.
 
@@ -56,7 +65,7 @@ Un seul message, numéroté, avec pour chaque constat retenu :
    Texte : <la règle telle qu'elle sera écrite, ou le titre et le résumé de l'issue>
 ```
 
-Puis les constats écartés, une ligne chacun, avec la raison. L'utilisateur garde, reformule ou écarte chaque constat : **attendre sa réponse** avant toute écriture. Sans aucun constat retenu, le dire et s'arrêter : une rétro vide est un bon signe, pas un échec.
+Puis les constats écartés, une ligne chacun, avec la raison. L'utilisateur garde, reformule ou écarte chaque constat : **attendre sa réponse** avant toute écriture. Sans aucun constat retenu alors que des transcripts ont été lus, le dire et s'arrêter : une rétro vide est alors un bon signe, pas un échec.
 
 ## 4. Faire créer les issues par `git-ops`
 

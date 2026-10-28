@@ -5,26 +5,37 @@
     Relève, en lecture seule, ce qui a gêné le travail dans les transcripts Claude Code du projet et dans les revues auditor.
 
 .DESCRIPTION
-    Lit les transcripts du projet (~/.claude/projects/<projet>/, sous-agents compris) sur une période, et rend un
-    rapport Markdown :
-      - les refus de hooks, groupés par règle et par raison ;
+    Lit les transcripts Claude Code sur une période et ne garde que les messages du projet : ceux dont le dossier
+    de travail (cwd) est la racine du projet ou un de ses sous-dossiers. Les sessions ouvertes depuis un dossier
+    parent (la racine d'un écosystème, par exemple) sont donc lues elles aussi. Chaque message n'est compté
+    qu'une fois, même quand une session reprise le recopie dans un autre fichier.
+
+    Rend un rapport Markdown :
+      - les refus de hooks, groupés par règle et par raison, avec chaque commande refusée ;
       - les commandes qui ont échoué au moins deux fois ;
       - les messages de l'utilisateur qui ressemblent à une correction (« non, … », « je t'ai dit… ») ;
-      - les constats d'auditor (B1, I1, M1…) des dernières PR fusionnées, sauf avec -NoPrs.
+      - les constats d'auditor (B1, I1, M1…) des PR fusionnées sur la période, sauf avec -NoPrs.
+    Les extraits sont tronqués, et les jetons reconnus par secretTokens (.harness/harness.json) sont masqués.
     Ne modifie rien. Le tri des constats revient à la session : ce rapport n'est que la matière.
 
 .PARAMETER Days
     Période couverte, en jours (14 par défaut).
 
 .PARAMETER Path
-    Dossier des transcripts. Par défaut, celui du projet : le chemin de la racine Git, chaque caractère
-    non alphanumérique remplacé par « - », sous ~/.claude/projects.
+    Dossier(s) de transcripts. Par défaut, ceux de la racine du projet et de ses dossiers parents, sous
+    ~/.claude/projects : le chemin, chaque caractère non alphanumérique remplacé par « - ».
+
+.PARAMETER Root
+    Racine du projet. Par défaut, la racine Git du dossier courant.
 
 .PARAMETER Prs
-    Nombre de PR fusionnées à lire pour les constats d'auditor (10 par défaut).
+    Nombre maximal de PR fusionnées à lire pour les constats d'auditor (10 par défaut).
 
 .PARAMETER NoPrs
     Ne lit pas les PR (pas de gh, pas de réseau).
+
+.PARAMETER PrsJson
+    Fichier JSON à la place de `gh pr list` (tests) : une liste de PR avec number, title et comments.
 
 .EXAMPLE
     pwsh -NoProfile -File .claude/skills/retro/scripts/scan-transcripts.ps1 -Days 30
@@ -32,21 +43,53 @@
 [CmdletBinding()]
 param(
     [ValidateRange(1, 365)] [int] $Days = 14,
-    [string] $Path,
+    [string[]] $Path,
+    [string] $Root,
     [ValidateRange(1, 50)] [int] $Prs = 10,
-    [switch] $NoPrs
+    [switch] $NoPrs,
+    [string] $PrsJson
 )
 
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 
-$root = (git rev-parse --show-toplevel 2>$null)
-if (-not $root) { $root = (Get-Location).Path }
-$root = [IO.Path]::GetFullPath($root)
-if (-not $Path) {
-    $Path = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.claude' 'projects' ($root -replace '[^A-Za-z0-9]', '-')
-}
+if (-not $Root) { $Root = git rev-parse --show-toplevel 2>$null }
+if (-not $Root) { $Root = (Get-Location).Path }
+$Root = [IO.Path]::GetFullPath($Root).TrimEnd('\', '/')
 $since = (Get-Date).AddDays(-$Days)
+$projects = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.claude' 'projects'
+function ConvertTo-ProjectDir([string] $Dir) { Join-Path $projects ($Dir -replace '[^A-Za-z0-9]', '-') }
+
+# Les dossiers à lire : celui de la racine, et ceux des dossiers parents (sessions ouvertes plus haut).
+$ownDir = ConvertTo-ProjectDir $Root
+if (-not $Path) {
+    $Path = @(); $d = $Root
+    while ($d) { $Path += ConvertTo-ProjectDir $d; $d = Split-Path $d -Parent }
+}
+$Path = @($Path | Where-Object { Test-Path -LiteralPath $_ })
+
+$inProject = @{}   # cache : cwd → appartient au projet
+function Test-InProject([string] $Cwd) {
+    if ($inProject.ContainsKey($Cwd)) { return $inProject[$Cwd] }
+    $full = [IO.Path]::GetFullPath($Cwd).TrimEnd('\', '/')
+    $ok = $full -ieq $Root -or $full.StartsWith("$Root\", 'OrdinalIgnoreCase') -or $full.StartsWith("$Root/", 'OrdinalIgnoreCase')
+    # Un dépôt Git rangé sous la racine (un clone dans le dossier d'un écosystème) est un autre projet.
+    $d = $full
+    while ($ok -and $d.Length -gt $Root.Length) {
+        if (Test-Path -LiteralPath (Join-Path $d '.git')) { $ok = $false }
+        $d = Split-Path $d -Parent
+    }
+    $inProject[$Cwd] = $ok
+    $ok
+}
+
+# Les secrets ne quittent pas le poste : les motifs du harness masquent les jetons dans les extraits.
+$secretPatterns = @()
+$harnessJson = Join-Path $Root '.harness' 'harness.json'
+if (Test-Path $harnessJson) {
+    $tokens = (Get-Content $harnessJson -Raw | ConvertFrom-Json).secretTokens
+    if ($tokens) { $secretPatterns = @($tokens.PSObject.Properties | ForEach-Object Value) }
+}
 
 function Get-Text($content) {
     if ($content -is [string]) { return $content }
@@ -54,23 +97,32 @@ function Get-Text($content) {
 }
 function Get-Short([string] $Text, [int] $Max = 140) {
     $one = ($Text -replace '\s+', ' ').Trim()
+    foreach ($p in $secretPatterns) { $one = [regex]::Replace($one, $p, '[secret masqué]') }
     if ($one.Length -le $Max) { $one } else { $one.Substring(0, $Max) + '…' }
 }
 
 $denials = @{}; $failures = @{}; $corrections = [System.Collections.Generic.List[object]]::new()
 $sessions = [System.Collections.Generic.HashSet[string]]::new()
+$seen = [System.Collections.Generic.HashSet[string]]::new()   # uuid des messages déjà lus (sessions reprises)
+$calls = @{}                                                  # tool_use id → outil et commande, tous fichiers
+$messages = 0
 # Une correction commence par un refus ou un rappel ; les messages injectés (<…>) sont ignorés.
 $correction = '^(non\b|nan\b|pas (ça|comme)|arr[eê]te|stop\b|je t[''\u2019]ai (déjà )?(dit|demandé)|j[''\u2019]ai (déjà )?dit|on avait dit|ne (fais|touche|mets|lance|modifie)|n[''\u2019]utilise pas|toujours\b|jamais\b)'
 
-$files = @()
-if (Test-Path $Path) { $files = @(Get-ChildItem -LiteralPath $Path -Recurse -File -Filter '*.jsonl' | Where-Object LastWriteTime -ge $since) }
+$files = @(foreach ($p in $Path) { Get-ChildItem -LiteralPath $p -Recurse -File -Filter '*.jsonl' | Where-Object LastWriteTime -ge $since })
+# Les fichiers les plus anciens d'abord : une session reprise recopie l'historique dans un fichier plus récent.
+$files = @($files | Sort-Object LastWriteTime)
 
 foreach ($file in $files) {
-    $calls = @{}
+    $inOwnDir = $file.FullName.StartsWith($ownDir, 'OrdinalIgnoreCase')
     foreach ($line in [IO.File]::ReadLines($file.FullName)) {
         $o = try { $line | ConvertFrom-Json -Depth 20 } catch { $null }
         if (-not $o -or -not $o.message) { continue }
+        if ($o.uuid -and -not $seen.Add([string] $o.uuid)) { continue }
         if ($o.timestamp -and ([datetime] $o.timestamp) -lt $since) { continue }
+        # Un message sans cwd n'est gardé que dans le dossier propre au projet.
+        if ($o.cwd) { if (-not (Test-InProject $o.cwd)) { continue } } elseif (-not $inOwnDir -and -not $PSBoundParameters.ContainsKey('Path')) { continue }
+        $messages++
         if ($o.sessionId) { [void] $sessions.Add($o.sessionId) }
         $content = $o.message.content
         if ($o.type -eq 'assistant') {
@@ -89,7 +141,7 @@ foreach ($file in $files) {
             if ($text -match 'hook error:\s*(?:harness/)?([\w-]+)\s*:\s*(.+)') {
                 $key = "$($Matches[1]) : $(Get-Short $Matches[2] 160)"
                 if (-not $denials[$key]) { $denials[$key] = @{ Count = 0; Commands = @{}; Sessions = [System.Collections.Generic.HashSet[string]]::new() } }
-                $denials[$key].Count++; [void] $denials[$key].Sessions.Add($o.sessionId)
+                $denials[$key].Count++; [void] $denials[$key].Sessions.Add([string] $o.sessionId)
                 # Une même raison couvre des gestes différents : chaque commande refusée garde son compte.
                 if ($cmd) { $denials[$key].Commands[$cmd] = 1 + [int] $denials[$key].Commands[$cmd] }
             }
@@ -103,17 +155,22 @@ foreach ($file in $files) {
         if (-not $results) {
             $text = (Get-Text $content).Trim()
             if ($text -and -not $text.StartsWith('<') -and $text -match "(?i)$correction") {
-                $corrections.Add([pscustomobject]@{ Date = ([datetime] $o.timestamp).ToString('yyyy-MM-dd'); Text = Get-Short $text 200 })
+                $corrections.Add([pscustomobject]@{ Time = [datetime] $o.timestamp; Text = Get-Short $text 200 })
             }
         }
     }
 }
 
 $out = [System.Collections.Generic.List[string]]::new()
-$out.Add("# Matière de la rétro — $(Split-Path $root -Leaf), $Days derniers jours")
+$out.Add("# Matière de la rétro — $(Split-Path $Root -Leaf), $Days derniers jours")
 $out.Add('')
-$out.Add("Transcripts : ``$Path`` — $($files.Count) fichier(s), $($sessions.Count) session(s).")
-if (-not $files) { $out.Add('Aucun transcript sur la période.') }
+$dirs = if ($Path) { ($Path | ForEach-Object { '`' + $_ + '`' }) -join ', ' } else { 'aucun dossier trouvé' }
+$out.Add("Projet : ``$Root``. Transcripts lus : $dirs.")
+$out.Add("$($files.Count) fichier(s), $($sessions.Count) session(s), $messages message(s) du projet.")
+if (-not $messages) {
+    $out.Add('')
+    $out.Add("**Aucun message de ce projet sur la période** : la rétro n'a pas de matière tirée des transcripts. Ce n'est pas le signe que tout va bien. Vérifier le dossier des transcripts (``-Path``) ou la période (``-Days``).")
+}
 
 $out.Add(''); $out.Add('## Refus de hooks')
 if ($denials.Count) {
@@ -128,17 +185,20 @@ $repeated = @($failures.GetEnumerator() | Where-Object { $_.Value.Count -ge 2 } 
 if ($repeated) { foreach ($e in $repeated) { $out.Add("- **$($e.Value.Count)×** ``$($e.Value.Label)`` — $($e.Value.Error)") } } else { $out.Add('Aucun.') }
 
 $out.Add(''); $out.Add("## Corrections de l'utilisateur (à relire : repérées par leurs premiers mots)")
-if ($corrections.Count) { foreach ($c in $corrections | Select-Object -Last 30) { $out.Add("- $($c.Date) : « $($c.Text) »") } } else { $out.Add('Aucune.') }
+if ($corrections.Count) {
+    foreach ($c in $corrections | Sort-Object Time | Select-Object -Last 30) { $out.Add("- $($c.Time.ToString('yyyy-MM-dd')) : « $($c.Text) »") }
+} else { $out.Add('Aucune.') }
 
 if (-not $NoPrs) {
-    $out.Add(''); $out.Add("## Constats d'auditor ($Prs dernières PR fusionnées)")
-    $list = gh pr list --state merged --limit $Prs --json number,title,comments 2>$null
-    if ($LASTEXITCODE -ne 0) { $out.Add('Lecture impossible (gh).') }
+    $out.Add(''); $out.Add("## Constats d'auditor (PR fusionnées depuis le $($since.ToString('yyyy-MM-dd')), $Prs au plus)")
+    $list = if ($PrsJson) { Get-Content $PrsJson -Raw }
+            else { gh pr list --state merged --search "merged:>=$($since.ToString('yyyy-MM-dd'))" --limit $Prs --json number,title,comments 2>$null }
+    if (-not $PrsJson -and $LASTEXITCODE -ne 0) { $out.Add('Lecture impossible (gh).') }
     else {
         $any = $false
         foreach ($pr in $list | ConvertFrom-Json) {
             $titles = foreach ($c in $pr.comments | Where-Object { $_.body -match 'auditor:\s*sha=' }) {
-                [regex]::Matches($c.body, '(?m)^\*\*([BIM]\d+)\.\s*(.+?)\*\*(?=\s*(?:—|$))') | ForEach-Object { "$($_.Groups[1].Value) $($_.Groups[2].Value)" }
+                [regex]::Matches($c.body, '(?m)^\*\*([BIM]\d+)\.\s*(.+?)\*\*(?=\s*(?:—|$))') | ForEach-Object { "$($_.Groups[1].Value) $(Get-Short $_.Groups[2].Value 160)" }
             }
             if ($titles) { $any = $true; $out.Add("- #$($pr.number) $($pr.title)"); foreach ($t in $titles | Select-Object -Unique) { $out.Add("  - $t") } }
         }
