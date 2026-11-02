@@ -21,7 +21,7 @@ Ce tableau dit où lire, pas quoi répondre. Pour toute question, ouvrir le fich
 | Quoi | Où |
 |---|---|
 | Version installée, dépôt source, type, modules, profil choisi | `.copier-answers.harness.yml` (`_commit`, `_src_path`, `kind`, `modules`, `hook_profile`) |
-| Configuration des règles | `.harness/harness.json` : `profile`, `allowedAgents`, `restrictedCommands`, `protectedBranches`, `destructivePatterns`, `protectedPaths`, `secretPaths`, `secretCommands`, `secretTokens`, `docAllow`, `debugPatterns` |
+| Configuration des règles | `.harness/harness.json`, notamment : `kind`, `profile`, `allowedAgents`, `restrictedCommands`, `protectedBranches`, `requireIssueRef`, `destructivePatterns`, `protectedPaths`, `secretPaths`, `secretPathsAllow`, `secretCommands`, `secretTokens`, `docAllow`, `debugPatterns`. Lire le fichier pour la liste exacte de la version installée |
 | Branchement des hooks | `.claude/settings.json` (`hooks`, et `permissions.deny` pour l'outil `Read`) |
 | Règles | `.harness/hooks/rules/<Événement>/<règle>.ps1`, et `.harness/modules/<module>/rules/<Événement>/` |
 | Moteur | `.harness/hooks/dispatch.ps1` et `HarnessHooks.psm1` |
@@ -35,12 +35,17 @@ Ce tableau dit où lire, pas quoi répondre. Pour toute question, ouvrir le fich
 
 ## 2. Expliquer un refus de hook
 
-1. **Trouver la règle.** Le nom suit `harness/` dans le message. Ouvrir son fichier (chercher `<règle>.ps1` sous `.harness/hooks/rules/` et `.harness/modules/`), puis la clé de `harness.json` qu'elle lit.
-2. **Trouver le motif en cause.** Comparer la commande ou le chemin refusé aux motifs de la règle, et citer le motif exact. Pour en avoir la preuve, rejouer le hook sur une entrée écrite dans un fichier temporaire, hors du dépôt :
-   ```
-   {"tool_name":"Bash","tool_input":{"command":"<commande refusée>"},"cwd":"<dossier du projet>","session_id":"help-harness"}
-   ```
-   puis `Get-Content -Raw '<fichier>' | pwsh -NoProfile -File .harness/hooks/dispatch.ps1 PreToolUse`. Ajouter `"agent_type":"git-ops"` pour voir si `git-ops` aurait le droit. **Ne jamais réécrire la commande refusée dans une nouvelle commande** : le hook la refuserait encore, et ce serait une tentative de contournement. `destructive-guard` ne se rejoue pas : il refuse toujours le premier essai.
+1. **Trouver la règle.** Le nom suit `harness/` dans le message. Ouvrir son fichier (chercher `<règle>.ps1` sous `.harness/hooks/rules/` et `.harness/modules/`), puis la clé de `harness.json` qu'elle lit. Un message `harness :` **sans nom de règle** vient du moteur lui-même : l'entrée du hook ou `harness.json` est illisible, et tout est refusé par sécurité. Ce n'est pas un refus de règle : c'est `/doctor`.
+2. **Trouver le motif en cause.** Comparer la commande ou le chemin refusé aux motifs de la règle, et citer le motif exact. Pour en avoir la preuve, rejouer le hook :
+   - écrire l'entrée **avec l'outil `Write`**, dans un fichier hors du dépôt (`<dossier temporaire>/help-harness-replay.json`), jamais par une commande shell, où la commande refusée réapparaîtrait :
+     ```
+     {"tool_name":"Bash","tool_input":{"command":"<commande refusée>"},"cwd":"<dossier du projet>","session_id":"help-harness-<heure>"}
+     ```
+     C'est du JSON : dans la commande et le dossier, doubler chaque `\` et écrire `\"` pour un guillemet. Le plus simple est d'écrire le dossier avec des `/` (`C:/repo/app`). Un JSON invalide donne un refus du moteur (`harness : entrée de hook illisible`), pas celui de la règle ;
+   - puis `Get-Content -Raw '<fichier>' | pwsh -NoProfile -File .harness/hooks/dispatch.ps1 PreToolUse` ;
+   - ajouter `"agent_type":"git-ops"` pour voir si `git-ops` aurait le droit.
+
+   **Ne jamais réécrire la commande refusée dans une nouvelle commande** : le hook la refuserait encore, et ce serait une tentative de contournement. Les règles tournent par ordre de nom, et la première qui refuse masque les suivantes. Ainsi `destructive-guard` refuse toujours le premier essai d'une commande destructive, avant `git-guard` et `secret-guard`. Pour voir la règle suivante, rejouer une seconde fois le même fichier, avec le même `session_id`. Changer de `session_id` à chaque explication (`<heure>`), pour ne pas hériter d'un rejeu précédent.
 3. **Dire la façon légitime de faire.** Le message du refus la donne souvent. Sinon :
    - `git-guard`, geste réservé : le confier à l'agent cité. Les écritures Git et GitHub passent par `git-ops`, en général par `/ship`, `/feature` ou `/release`. Une fusion passe par `merge-pr.ps1`, que lance `git-ops` après une revue `auditor`.
    - `git-guard`, geste interdit : `--no-verify` ne se contourne pas. Corriger ce que le pre-commit refuse : un secret trouvé par gitleaks se retire, et un gitleaks absent relève de `/doctor`. `git add -A` se remplace par les fichiers nommés un par un. Une branche protégée demande une branche `feature/<n>-…` et une PR.
@@ -51,7 +56,7 @@ Ce tableau dit où lire, pas quoi répondre. Pour toute question, ouvrir le fich
    - `stop-checks` : corriger les vérifications du module en échec, citées dans le message (lint, typecheck, tests…). `/lint` s'en charge pour le lint.
 4. **Trancher : faux positif ou refus qui joue son rôle.**
    - **Le refus joue son rôle** quand le geste visé par la règle était bien celui tenté : une écriture Git hors de `git-ops`, la lecture d'un secret, un fichier qui encadre l'agent. C'est le cas le plus fréquent : le dire franchement, et donner la façon légitime.
-   - **C'est un faux positif** quand le geste était légitime et que seul le texte ressemble au motif. Par exemple une lecture prise pour une écriture (`git merge-base` pris pour `git merge`), ou une route `$token` prise pour une variable secrète. Le motif est trop large : c'est un défaut du harness, commun à tous les projets. Il se remonte par une issue `harness-update` (section 5). En attendant, l'utilisateur peut lancer la commande lui-même dans son terminal. L'agent ne la reformule pas pour passer sous le motif.
+   - **C'est un faux positif** quand le geste était légitime et que seul le texte ressemble au motif. Par exemple une route d'API `$token` prise pour une variable secrète. Le rejeu le prouve : un faux positif déjà corrigé dans la version installée ne refuse plus. Le motif est trop large : c'est un défaut du harness, commun à tous les projets. Il se remonte par une issue `harness-update` (section 5). En attendant, l'utilisateur peut lancer la commande lui-même dans son terminal. L'agent ne la reformule pas pour passer sous le motif.
 
 ## 3. Les réglages
 
@@ -63,7 +68,7 @@ Lire le profil actif dans le message de `session-info`, au début de la session,
 Ces variables se règlent **par l'utilisateur, avant de lancer Claude Code** : les hooks reçoivent l'environnement de Claude Code, pas celui des commandes de l'agent. Une variable posée par l'agent dans son shell est donc sans effet, et le skill n'en pose aucune. Ne pas les mettre dans `env` de `settings.json` non plus : ce fichier appartient au harness. Un changement durable du profil passe par la réponse `hook_profile` lors d'une mise à jour du harness (section 4).
 
 Pour chaque réglage demandé, dire **ce qu'on perd**, et s'il atteint vraiment le but :
-- couper `secret-guard` n'ouvre pas `.env` à l'outil `Read` : `permissions.deny` de `settings.json` le refuse aussi, nativement. Et la valeur lue partirait dans le transcript de la session ;
+- couper `secret-guard` n'ouvre pas `.env` à l'outil `Read` : le hook n'est pas branché sur `Read` (`matcher` de `settings.json`), que seul `permissions.deny` protège, nativement. La coupure ouvre en revanche la lecture par le shell (`Get-Content .env`, `cat .env`), l'écriture des fichiers secrets et les commandes qui affichent un secret (`sops -d`, `$env:…TOKEN`). Et la valeur lue partirait dans le transcript de la session ;
 - couper `git-guard` retire aussi la revue `auditor` obligatoire, les branches protégées et le refus de `--no-verify`.
 
 Proposer d'abord la façon légitime (section 2). Un réglage revient à l'utilisateur, en connaissance de cause.
@@ -71,9 +76,12 @@ Proposer d'abord la façon légitime (section 2). Un réglage revient à l'utili
 ## 4. Versions et mises à jour
 
 - **Version installée** : `_commit` dans `.copier-answers.harness.yml`. Une forme `vX.Y.Z-N-g<sha>` est une version de développement, N commits après le tag `vX.Y.Z`.
-- **Versions publiées** : `git ls-remote --tags --refs https://github.com/<propriétaire>/<dépôt>`, d'après `_src_path` (`gh:<propriétaire>/<dépôt>`).
+- **Dépôt source** : `_src_path`. De la forme `gh:<propriétaire>/<dépôt>`, c'est le dépôt GitHub. Un chemin (`C:\…\harness`) est une copie de travail locale, le cas des versions de développement.
+- **Versions publiées** : `git ls-remote --tags --refs https://github.com/<propriétaire>/<dépôt>`, ou `git ls-remote --tags --refs '<chemin>'` pour une copie locale.
 - **Ce qu'apporte une version** : la section de chaque version au-dessus de celle installée, dans le CHANGELOG du dépôt source, lu au tag visé :
-  `gh api 'repos/<propriétaire>/<dépôt>/contents/CHANGELOG.md?ref=<tag>' -H 'Accept: application/vnd.github.raw'`
+  - dépôt GitHub : `gh api 'repos/<propriétaire>/<dépôt>/contents/CHANGELOG.md?ref=<tag>' -H 'Accept: application/vnd.github.raw'` ;
+  - copie locale : `git -C '<chemin>' show <tag>:CHANGELOG.md`.
+
   Résumer ce qui change pour ce projet : skills, règles plus strictes ou corrigées, fichiers modifiés. Une version de développement se compare à la section « Non publié » au commit `<sha>`.
 - **La procédure actuelle**, donnée sans la lancer. Elle revient à l'utilisateur, car elle réécrit les fichiers du harness :
   1. une branche `chore/harness-vX.Y.Z`, créée par `git-ops` ;
