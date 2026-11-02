@@ -43,7 +43,7 @@ Ce tableau dit où lire, pas quoi répondre. Pour toute question, ouvrir le fich
      ```
      `tool_name` et `tool_input` reprennent l'outil refusé : `"Edit"` ou `"Write"` avec `{"file_path":"<chemin>"}` (cas de `config-protection` et de `secret-guard`), `"Agent"` avec `{"subagent_type":"<agent>","model":"<modèle, s'il était passé>"}` (cas de `model-guard`). Ne rejouer que les outils du `matcher` de `PreToolUse` dans `settings.json` : le hook ne voit jamais les autres. Un refus de `Read` sur un secret vient de `permissions.deny`, sans préfixe `harness/`, et son rejeu donnerait un refus `secret-guard` que la session ne produit pas.
 
-     C'est du JSON : dans la commande et le dossier, doubler chaque `\` et écrire `\"` pour un guillemet. Le plus simple est d'écrire le dossier avec des `/` (`C:/repo/app`). Un JSON invalide donne un refus du moteur (`harness : entrée de hook illisible`), pas celui de la règle ;
+     C'est du JSON : dans la commande, le dossier et le chemin (`file_path`), doubler chaque `\` et écrire `\"` pour un guillemet. Le plus simple est d'écrire le dossier et le chemin avec des `/` (`C:/repo/app`), ou le chemin relatif au projet. Un JSON invalide donne un refus du moteur (`harness : entrée de hook illisible`), pas celui de la règle ;
    - puis `Get-Content -Raw '<fichier>' | pwsh -NoProfile -File .harness/hooks/dispatch.ps1 PreToolUse` ;
    - ajouter `"agent_type":"git-ops"` pour voir si `git-ops` aurait le droit.
 
