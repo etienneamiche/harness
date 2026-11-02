@@ -41,6 +41,8 @@ Ce tableau dit où lire, pas quoi répondre. Pour toute question, ouvrir le fich
      ```
      {"tool_name":"Bash","tool_input":{"command":"<commande refusée>"},"cwd":"<dossier du projet>","session_id":"help-harness-<heure>"}
      ```
+     `tool_name` et `tool_input` reprennent l'outil refusé : `"Edit"` ou `"Write"` avec `{"file_path":"<chemin>"}` (cas de `config-protection` et de `secret-guard`), `"Agent"` avec `{"subagent_type":"<agent>","model":"<modèle, s'il était passé>"}` (cas de `model-guard`). Ne rejouer que les outils du `matcher` de `PreToolUse` dans `settings.json` : le hook ne voit jamais les autres. Un refus de `Read` sur un secret vient de `permissions.deny`, sans préfixe `harness/`, et son rejeu donnerait un refus `secret-guard` que la session ne produit pas.
+
      C'est du JSON : dans la commande et le dossier, doubler chaque `\` et écrire `\"` pour un guillemet. Le plus simple est d'écrire le dossier avec des `/` (`C:/repo/app`). Un JSON invalide donne un refus du moteur (`harness : entrée de hook illisible`), pas celui de la règle ;
    - puis `Get-Content -Raw '<fichier>' | pwsh -NoProfile -File .harness/hooks/dispatch.ps1 PreToolUse` ;
    - ajouter `"agent_type":"git-ops"` pour voir si `git-ops` aurait le droit.
@@ -95,7 +97,7 @@ Savoir si le projet est à jour ou si l'installation est saine, c'est `/doctor`.
 
 - **Propre au projet** (une convention, un piège de ce code, une commande du projet) : une règle dans « Spécificités de ce projet » d'`AGENTS.md`. Ce fichier appartient au projet, et la mise à jour du harness ne l'écrase jamais. La règle passe par une issue du projet, puis par `/feature`. Rédiger la règle telle qu'elle sera écrite : une phrase impérative, avec sa raison.
 - **Commun à tous les projets** (un faux positif, un motif trop étroit, un manque d'un skill) : une issue `harness-update` sur le dépôt source.
-  1. Chercher un doublon : `gh issue list -R <propriétaire>/<dépôt> --state open --search '<mots-clés>'`. Une issue existante se cite, sans la recréer.
+  1. Chercher un doublon : `gh issue list -R <propriétaire>/<dépôt> --state open --search '<mots-clés>'`. Le dépôt vient de `_src_path` (`gh:<propriétaire>/<dépôt>`). Pour une copie locale, il se lit par `git -C '<chemin>' remote get-url origin`. Une issue existante se cite, sans la recréer.
   2. Rédiger le brouillon : le constat, la preuve (la commande, le motif, la règle, sans secret ni chemin personnel) et une piste. Le faire valider.
   3. Après accord, `git-ops` la crée (sans paramètre `model`) : `gh issue create -R <propriétaire>/<dépôt> --title "<titre>" --body-file '<fichier hors du dépôt>' --label harness-update`.
 - Jamais par une modification locale d'un fichier du harness : le doctor la signale, la mise à jour suivante entre en conflit, et les autres projets n'en profitent pas.
