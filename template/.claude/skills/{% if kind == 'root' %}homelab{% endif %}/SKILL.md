@@ -1,0 +1,67 @@
+---
+name: homelab
+description: Répond sur l'infra du homelab — matériel, réseau et adressage, nommage, clusters, exposition des apps, sauvegardes et restauration, roadmap H0 à H5, décisions et points ouverts — à partir de homelab/docs/, en citant le fichier, la section et la date, en séparant ce qui est fait de ce qui est prévu et en signalant les docs qui se contredisent. Lecture seule : aucune commande vers l'infra (ssh, ping, kubectl, tofu, ansible). Pour l'état réel, il dit ce qu'affirment les docs et donne la commande à lancer soi-même. À utiliser pour toute question sur le homelab ou son infra : « quelle IP pour le futur NAS ? », « où en est H1 ? », « le cluster vps tourne ? », « comment on expose une app ? », « qu'est-ce qu'il reste à acheter ? », « comment je restaure l'hyperviseur ? », « pourquoi deux clusters ? ». Pas pour le harness et ses hooks (/help-harness), un doctor en échec (/doctor), ni pour noter une idée de projet (/project-idea).
+argument-hint: "[question]"
+---
+
+# /homelab
+
+L'infra du homelab est décrite dans `homelab/docs/`, un dépôt privé. `/homelab` y trouve la réponse, la cite, et dit si elle est encore sûre. Une doc d'infra vieillit : une décision datée en remplace une autre, un « prévu » devient « fait » sans que tous les fichiers suivent. La réponse vaut ce que vaut sa source, et le skill la montre toujours.
+
+**Lecture seule, docs seulement.** Le skill ne lance aucune commande vers l'infra : ni `ssh`, ni `ping`, ni `kubectl`, `argocd`, `tofu`, `ansible`, `curl` sur un hôte du homelab. La lecture de l'état réel arrive avec les wrappers du module `infra`. Il ne modifie aucun fichier de `homelab` : une correction de la doc passe par une PR de ce dépôt.
+
+**Confidentialité.** `homelab` est privé, et ce qui en sort ne doit pas fuiter. Le skill peut citer une adresse, un nom d'hôte ou le domaine **dans la session**. Il ne les écrit jamais ailleurs : ni dans un fichier de `services` ou d'un autre dépôt public, ni dans une issue ou une PR de `harness` ou de `services`, ni dans la page d'état. Il ne lit jamais un secret : ni `*.sops.yaml` déchiffré, ni `*.tfstate`, `*.tfvars`, kubeconfig, ni clé.
+
+## 1. Trouver les docs
+
+- Les docs sont dans `homelab/docs/` (le dépôt `homelab` de `repos.yaml`, cloné à la racine). S'il manque, le dire et renvoyer à `pwsh -NoProfile -File scripts/pull-all.ps1`, puis s'arrêter : sans les docs, il n'y a pas de réponse sûre.
+- Fraîcheur du clone : `git -C homelab status -sb` dit s'il a des modifications locales ou du retard connu. Si la question porte sur une décision récente, proposer `scripts/pull-all.ps1` avant de répondre.
+- Lister `homelab/docs/`. Le point d'entrée est la roadmap (`03-roadmap.md`), qui renvoie aux autres docs. Ne pas recopier de mémoire le contenu d'un doc : il change.
+
+**Carte par sujet** (les noms de fichiers sont ceux d'aujourd'hui ; lister le dossier pour la liste exacte) :
+
+| Sujet | Où chercher |
+|---|---|
+| Profil, contraintes, parc matériel, achats | `00-profil-contraintes.md`, puis la roadmap (budget de chaque phase) |
+| Ce que le homelab doit héberger, et dans quel ordre | `01-catalogue-projets.md` |
+| Pourquoi tel choix d'architecture (exposition, VPN, stockage, réseau) | `02-arbitrages-architecture.md` |
+| Phases H0 à H5, décisions datées, points reportés | `03-roadmap.md`, et la section « Piste homelab » de `docs/ROADMAP.md` à la racine `services` |
+| Adresses, plages, DNS | `adressage.md` |
+| Noms des hôtes et du domaine | `nommage.md` |
+| Installation de l'hyperviseur | le guide d'installation (`06-…`) |
+| Clusters, GitOps, exposition, certificats, réseau maison–VPS | `07-plateforme-k3s-gitops.md` |
+| Reconstruire après une panne | `runbook-restauration.md` |
+| Problèmes connus | les issues ouvertes de `homelab` (`gh issue list -R <propriétaire>/homelab --state open`), les ⚠️ et les points reportés de la roadmap |
+
+Le propriétaire se lit dans `repos.yaml` (`owner`).
+
+## 2. Répondre avec sa source
+
+Chercher dans les docs (`Select-String` ou l'outil de recherche, sur `homelab/docs/`), puis lire la section entière, pas seulement la ligne trouvée.
+
+Pour chaque fait de la réponse :
+- **Citer** le fichier et la section : `03-roadmap.md`, « H1 — Plateforme k3s ». Ajouter la date quand la doc en donne une : « Dernière mise à jour », « Décision du … », « acheté le … ». Sans date dans la doc, la date du dernier commit qui l'a touchée : `git -C homelab log -1 --format=%cs -- docs/<fichier>`.
+- **Fait ou prévu.** Une phase H0 à H5 a un état (le tableau « Piste homelab » de `services/docs/ROADMAP.md`, et la roadmap elle-même). Une machine ou un service d'une phase à venir est *prévu*, même si sa doc le décrit au présent. Le dire : « prévu en H2, pas encore installé ». Une adresse réservée n'est pas une machine qui tourne.
+- **Les décisions datées priment.** Un encadré « Décision du <date> » remplace ce que dit le corps du doc plus ancien. Quand deux docs se contredisent (un choix, un chiffre, un nom), citer les deux avec leur date, dire lequel paraît le plus récent, et ne pas trancher à la place de l'utilisateur. Un renvoi vers un doc qui n'existe pas (« voir le doc 04 ») se signale aussi.
+- **Ne rien inventer.** Une question à laquelle les docs ne répondent pas reçoit « les docs ne le disent pas », avec ce qui s'en approche. Pas de valeur plausible devinée : une adresse ou un port devinés finissent dans une config.
+
+## 3. L'état réel
+
+« Le cluster tourne ? », « l'hyperviseur est à jour ? », « la sauvegarde a marché cette nuit ? » : les docs ne le savent pas. Répondre en trois temps :
+1. **Ce que disent les docs** : l'état prévu ou constaté, avec sa source et sa date (« H1 à venir d'après la roadmap du <date> : le cluster n'est pas encore installé »).
+2. **Comment le vérifier** : la commande que l'utilisateur lance lui-même, dans son terminal, prise dans les docs quand elles la donnent (runbook, guide d'installation). Le skill ne la lance pas.
+3. **Si l'écart se confirme** : la doc est à mettre à jour, par une PR de `homelab`.
+
+## 4. Où ranger ce qui ressort
+
+- **Un problème du homelab** (une panne, un point ouvert sans suivi, une doc fausse ou contradictoire) : une issue de `homelab`, dépôt privé, où les détails d'infra ont leur place. Chercher un doublon (`gh issue list -R <propriétaire>/homelab --state open --search '<mots-clés>'`), rédiger le brouillon, le faire valider, puis `git-ops` la crée après accord (sans paramètre `model`) : `gh issue create -R <propriétaire>/homelab --title "<titre>" --body-file '<fichier hors du dépôt>' --label infra`.
+- **Un manque du harness ou de l'écosystème** (un skill, une règle, un module `infra` attendu) : une issue `harness-update` sur `harness`, ou une issue `/evolve` sur `services`. Ces dépôts sont **publics** : le brouillon ne contient ni adresse, ni nom d'hôte, ni domaine, ni chiffre du parc. Il décrit le besoin en termes génériques (« un hyperviseur », « le cluster de la maison »).
+- Rien n'est créé sans accord.
+
+## 5. Répondre
+
+Une réponse courte, dans cet ordre :
+- **Réponse** : en une ou deux phrases, en disant si c'est fait ou prévu.
+- **Source** : fichier, section, date. Les contradictions et les renvois cassés, s'il y en a.
+- **À vérifier** : pour une question d'état réel, la commande à lancer soi-même.
+- **Si besoin** : l'issue proposée, avec son brouillon, et la question d'accord.
