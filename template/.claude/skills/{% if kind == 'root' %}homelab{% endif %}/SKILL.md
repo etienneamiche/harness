@@ -15,7 +15,10 @@ L'infra du homelab est décrite dans `homelab/docs/`, un dépôt privé. `/homel
 ## 1. Trouver les docs
 
 - Les docs sont dans `homelab/docs/` (le dépôt `homelab` de `repos.yaml`, cloné à la racine). S'il manque, le dire et renvoyer à `pwsh -NoProfile -File scripts/pull-all.ps1`, puis s'arrêter : sans les docs, il n'y a pas de réponse sûre.
-- Fraîcheur du clone : `git -C homelab status -sb` dit s'il a des modifications locales, et son retard au dernier `fetch`. La date de ce `fetch` se lit sans rien modifier : `(Get-Item homelab/.git/FETCH_HEAD -ErrorAction SilentlyContinue).LastWriteTime`. Sans branche suivie (`## main` seul) ou sans `FETCH_HEAD`, le retard est inconnu : le dire, plutôt qu'affirmer le clone à jour. Le skill ne lance ni `git fetch` ni `git pull` : si la question porte sur une décision récente, il propose `scripts/pull-all.ps1` avant de répondre.
+- Fraîcheur du clone : `git -C homelab status -sb` dit s'il a des modifications locales et s'il suit une branche distante (`## main...origin/main`). Le retard qu'il donne vaut au dernier `fetch`, dont la date se lit sans rien modifier : `(Get-Item homelab/.git/FETCH_HEAD -ErrorAction SilentlyContinue).LastWriteTime`.
+  - Sans branche suivie (`## main` seul) : le retard est inconnu.
+  - Avec une branche suivie mais sans `FETCH_HEAD` : pas de `fetch` depuis le clone, c'est le cas juste après le premier `pull-all.ps1`. Le retard court depuis la date du clone : `(Get-Item -Force homelab/.git).CreationTime`.
+  - Ne jamais affirmer le clone à jour. Le skill ne lance ni `git fetch` ni `git pull`. Si la question porte sur une décision récente, ou si le dernier `fetch` (ou le clone) est ancien, il propose `scripts/pull-all.ps1` avant de répondre.
 - Lister `homelab/docs/`. Le point d'entrée est la roadmap (`03-roadmap.md`), qui renvoie aux autres docs. Ne pas recopier de mémoire le contenu d'un doc : il change.
 
 **Ce qu'on y trouve.** Lister le dossier et lire le titre de chaque doc pour savoir lequel ouvrir. Les docs couvrent en général :
