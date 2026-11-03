@@ -1,6 +1,6 @@
 ---
 name: homelab
-description: Répond sur l'infra du homelab — matériel, réseau et adressage, nommage, clusters, exposition des apps, sauvegardes et restauration, roadmap H0 à H5, décisions et points ouverts — à partir de homelab/docs/, en citant le fichier, la section et la date, en séparant ce qui est fait de ce qui est prévu et en signalant les docs qui se contredisent. Lecture seule : aucune commande vers l'infra (ssh, ping, kubectl, tofu, ansible). Pour l'état réel, il dit ce qu'affirment les docs et donne la commande à lancer soi-même. À utiliser pour toute question sur le homelab ou son infra : « quelle IP pour le futur NAS ? », « où en est H1 ? », « le cluster vps tourne ? », « comment on expose une app ? », « qu'est-ce qu'il reste à acheter ? », « comment je restaure l'hyperviseur ? », « pourquoi deux clusters ? ». Pas pour le harness et ses hooks (/help-harness), un doctor en échec (/doctor), ni pour noter une idée de projet (/project-idea).
+description: Répond sur l'infra du homelab — matériel, réseau et adressage, nommage, clusters, exposition des apps, sauvegardes et restauration, roadmap H0 à H5, décisions et points ouverts — à partir de homelab/docs/, en citant le fichier, la section et la date, en séparant ce qui est fait de ce qui est prévu et en signalant les docs qui se contredisent. Lecture seule : aucune commande vers l'infra (ssh, ping, kubectl, tofu, ansible). Pour l'état réel, il dit ce qu'affirment les docs et donne la commande à lancer soi-même. À utiliser pour toute question sur le homelab ou son infra : « quelle IP pour la prochaine machine ? », « où en est H1 ? », « le cluster vps tourne ? », « comment on expose une app ? », « qu'est-ce qu'il reste à acheter ? », « comment je restaure l'hyperviseur ? », « pourquoi deux clusters ? ». Pas pour le harness et ses hooks (/help-harness), un doctor en échec (/doctor), ni pour noter une idée de projet (/project-idea).
 argument-hint: "[question]"
 ---
 
@@ -18,20 +18,15 @@ L'infra du homelab est décrite dans `homelab/docs/`, un dépôt privé. `/homel
 - Fraîcheur du clone : `git -C homelab status -sb` dit s'il a des modifications locales ou du retard connu. Si la question porte sur une décision récente, proposer `scripts/pull-all.ps1` avant de répondre.
 - Lister `homelab/docs/`. Le point d'entrée est la roadmap (`03-roadmap.md`), qui renvoie aux autres docs. Ne pas recopier de mémoire le contenu d'un doc : il change.
 
-**Carte par sujet** (les noms de fichiers sont ceux d'aujourd'hui ; lister le dossier pour la liste exacte) :
+**Ce qu'on y trouve.** Lister le dossier et lire le titre de chaque doc pour savoir lequel ouvrir. Les docs couvrent en général :
+- le profil, les contraintes, le parc matériel et les achats ;
+- ce que le homelab doit héberger, et dans quel ordre ;
+- les arbitrages d'architecture et leurs raisons ;
+- les phases H0 à H5, les décisions datées et les points reportés : `03-roadmap.md`, et la section « Piste homelab » de `docs/ROADMAP.md` à la racine `services` ;
+- l'adressage, le DNS et le nommage ;
+- l'installation de l'hyperviseur, la plateforme (clusters, déploiement, exposition, certificats) et la restauration après une panne.
 
-| Sujet | Où chercher |
-|---|---|
-| Profil, contraintes, parc matériel, achats | `00-profil-contraintes.md`, puis la roadmap (budget de chaque phase) |
-| Ce que le homelab doit héberger, et dans quel ordre | `01-catalogue-projets.md` |
-| Pourquoi tel choix d'architecture (exposition, VPN, stockage, réseau) | `02-arbitrages-architecture.md` |
-| Phases H0 à H5, décisions datées, points reportés | `03-roadmap.md`, et la section « Piste homelab » de `docs/ROADMAP.md` à la racine `services` |
-| Adresses, plages, DNS | `adressage.md` |
-| Noms des hôtes et du domaine | `nommage.md` |
-| Installation de l'hyperviseur | le guide d'installation (`06-…`) |
-| Clusters, GitOps, exposition, certificats, réseau maison–VPS | `07-plateforme-k3s-gitops.md` |
-| Reconstruire après une panne | `runbook-restauration.md` |
-| Problèmes connus | les issues ouvertes de `homelab` (`gh issue list -R <propriétaire>/homelab --state open`), les ⚠️ et les points reportés de la roadmap |
+**Problèmes connus** : les issues ouvertes de `homelab` (`gh issue list -R <propriétaire>/homelab --state open`), les ⚠️ et les points reportés de la roadmap.
 
 Le propriétaire se lit dans `repos.yaml` (`owner`).
 
@@ -40,9 +35,9 @@ Le propriétaire se lit dans `repos.yaml` (`owner`).
 Chercher dans les docs (`Select-String` ou l'outil de recherche, sur `homelab/docs/`), puis lire la section entière, pas seulement la ligne trouvée.
 
 Pour chaque fait de la réponse :
-- **Citer** le fichier et la section : `03-roadmap.md`, « H1 — Plateforme k3s ». Ajouter la date quand la doc en donne une : « Dernière mise à jour », « Décision du … », « acheté le … ». Sans date dans la doc, la date du dernier commit qui l'a touchée : `git -C homelab log -1 --format=%cs -- docs/<fichier>`.
-- **Fait ou prévu.** Une phase H0 à H5 a un état (le tableau « Piste homelab » de `services/docs/ROADMAP.md`, et la roadmap elle-même). Une machine ou un service d'une phase à venir est *prévu*, même si sa doc le décrit au présent. Le dire : « prévu en H2, pas encore installé ». Une adresse réservée n'est pas une machine qui tourne.
-- **Les décisions datées priment.** Un encadré « Décision du <date> » remplace ce que dit le corps du doc plus ancien. Quand deux docs se contredisent (un choix, un chiffre, un nom), citer les deux avec leur date, dire lequel paraît le plus récent, et ne pas trancher à la place de l'utilisateur. Un renvoi vers un doc qui n'existe pas (« voir le doc 04 ») se signale aussi.
+- **Citer** le fichier et la section : `03-roadmap.md`, « H1 — … ». Ajouter la date quand la doc en donne une : « Dernière mise à jour », « Décision du … », la date d'un achat ou d'une installation. Sans date dans la doc, la date du dernier commit qui l'a touchée : `git -C homelab log -1 --format=%cs -- docs/<fichier>`.
+- **Fait ou prévu.** Une phase H0 à H5 a un état (le tableau « Piste homelab » de `docs/ROADMAP.md` à la racine, et la roadmap elle-même). Une machine ou un service d'une phase à venir est *prévu*, même si sa doc le décrit au présent. Le dire : « prévu en H2, pas encore installé ». Une adresse réservée n'est pas une machine qui tourne.
+- **Les décisions datées priment.** Un encadré « Décision du <date> » remplace ce que dit le corps du doc plus ancien. Quand deux docs se contredisent (un choix, un chiffre, un nom), citer les deux avec leur date, dire lequel paraît le plus récent, et ne pas trancher à la place de l'utilisateur. Un renvoi vers un doc qui n'existe pas (« voir le doc N ») se signale aussi.
 - **Ne rien inventer.** Une question à laquelle les docs ne répondent pas reçoit « les docs ne le disent pas », avec ce qui s'en approche. Pas de valeur plausible devinée : une adresse ou un port devinés finissent dans une config.
 
 ## 3. L'état réel
@@ -50,7 +45,7 @@ Pour chaque fait de la réponse :
 « Le cluster tourne ? », « l'hyperviseur est à jour ? », « la sauvegarde a marché cette nuit ? » : les docs ne le savent pas. Répondre en trois temps :
 1. **Ce que disent les docs** : l'état prévu ou constaté, avec sa source et sa date (« H1 à venir d'après la roadmap du <date> : le cluster n'est pas encore installé »).
 2. **Comment le vérifier** : la commande que l'utilisateur lance lui-même, dans son terminal, prise dans les docs quand elles la donnent (runbook, guide d'installation). Le skill ne la lance pas.
-3. **Si l'écart se confirme** : la doc est à mettre à jour, par une PR de `homelab`.
+3. **Si l'écart se confirme** : la doc est fausse. C'est une issue de `homelab` (section 4), et la correction viendra ensuite par une PR de ce dépôt.
 
 ## 4. Où ranger ce qui ressort
 
