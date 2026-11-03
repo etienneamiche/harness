@@ -15,7 +15,7 @@ L'infra du homelab est décrite dans `homelab/docs/`, un dépôt privé. `/homel
 ## 1. Trouver les docs
 
 - Les docs sont dans `homelab/docs/` (le dépôt `homelab` de `repos.yaml`, cloné à la racine). S'il manque, le dire et renvoyer à `pwsh -NoProfile -File scripts/pull-all.ps1`, puis s'arrêter : sans les docs, il n'y a pas de réponse sûre.
-- Fraîcheur du clone : `git -C homelab status -sb` dit s'il a des modifications locales et s'il suit une branche distante (`## main...origin/main`). Le retard qu'il donne vaut au dernier `fetch`. Les dates se lisent sans rien modifier, en une commande qui nomme chaque ligne : `Get-Item -Force homelab/.git/FETCH_HEAD, homelab/.git -ErrorAction SilentlyContinue | Select-Object Name, LastWriteTime, CreationTime`.
+- Fraîcheur du clone : `git --no-optional-locks -C homelab status -sb` dit s'il a des modifications locales et s'il suit une branche distante (`## main...origin/main`), sans écrire dans `homelab/.git`. Le retard qu'il donne vaut au dernier `fetch`. Les dates se lisent sans rien modifier, par l'outil PowerShell (`Format-List` garde chaque date, même enchaînée à une autre commande) : `Get-Item -Force homelab/.git/FETCH_HEAD, homelab/.git -ErrorAction SilentlyContinue | Format-List Name, LastWriteTime, CreationTime`.
   - Sans branche suivie (`## main` seul) : le retard est inconnu.
   - Une ligne `FETCH_HEAD` : son `LastWriteTime` est la date du dernier `fetch`.
   - Pas de ligne `FETCH_HEAD`, avec une branche suivie : pas de `fetch` depuis le clone, c'est le cas juste après le premier `pull-all.ps1`. Le retard court depuis la date du clone, le `CreationTime` de la ligne `.git`. Ne pas l'appeler « dernier `fetch` ».
