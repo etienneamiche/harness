@@ -15,7 +15,7 @@ L'infra du homelab est décrite dans `homelab/docs/`, un dépôt privé. `/homel
 ## 1. Trouver les docs
 
 - Les docs sont dans `homelab/docs/` (le dépôt `homelab` de `repos.yaml`, cloné à la racine). S'il manque, le dire et renvoyer à `pwsh -NoProfile -File scripts/pull-all.ps1`, puis s'arrêter : sans les docs, il n'y a pas de réponse sûre.
-- Fraîcheur du clone : `git -C homelab status -sb` dit s'il a des modifications locales ou du retard connu. Si la question porte sur une décision récente, proposer `scripts/pull-all.ps1` avant de répondre.
+- Fraîcheur du clone : `git -C homelab status -sb` dit s'il a des modifications locales ou du retard connu depuis le dernier `fetch`. Sans branche distante suivie, ou sans `fetch` récent, on ne sait pas si le clone est en retard : le dire plutôt que de l'affirmer à jour. Si la question porte sur une décision récente, proposer `scripts/pull-all.ps1` avant de répondre.
 - Lister `homelab/docs/`. Le point d'entrée est la roadmap (`03-roadmap.md`), qui renvoie aux autres docs. Ne pas recopier de mémoire le contenu d'un doc : il change.
 
 **Ce qu'on y trouve.** Lister le dossier et lire le titre de chaque doc pour savoir lequel ouvrir. Les docs couvrent en général :
