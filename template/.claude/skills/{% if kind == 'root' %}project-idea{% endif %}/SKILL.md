@@ -30,7 +30,7 @@ L'idée arrive en une phrase (`/project-idea "…"`), ou au fil de la conversati
 
 1. **La phrase** : une ligne courte, qui dit ce qu'on construirait (« Carnet de recettes partagé avec la famille »). Une idée donnée en plusieurs phrases se résume en une. Les détails ne sont pas perdus : les citer dans le compte rendu, pour la future page. Si la demande ne dit pas clairement quelle idée noter, demander la phrase.
 2. **Les idées proches** : lire `IDEAS.md`. Une idée qui dit la même chose avec d'autres mots se signale, avec son numéro et son statut, et on demande s'il faut quand même noter la nouvelle. Le script ne repère que les doublons exacts.
-3. **L'ajout** : `pwsh -NoProfile -File project-ideas/scripts/idea.ps1 "<phrase>" -NoCommit`. La phrase est entre guillemets doubles : une apostrophe y est courante. Un `$`, un backtick ou un guillemet double dans la phrase se reformule sans eux. Si le script refuse (doublon, `IDEAS.md` modifié, branche autre que `main`, pull impossible), rapporter son message tel quel et s'arrêter.
+3. **L'ajout** : `pwsh -NoProfile -File project-ideas/scripts/idea.ps1 "<phrase>" -NoCommit`. La phrase est entre guillemets doubles : une apostrophe y est courante. Un `$`, un backtick ou un guillemet double dans la phrase se reformule sans eux. Une commande Git écrite en clair aussi (« git push », « git reset ») : `git-guard` refuserait la commande entière. Si le script refuse (doublon, `IDEAS.md` modifié, branche autre que `main`, pull impossible), rapporter son message tel quel et s'arrêter.
 4. **Le commit** : par `git-ops` (section 5), avec le message `docs(ideas): add idea <n>, <phrase>`.
 
 Une idée notée par l'utilisateur lui-même, avec sa phrase, se commite sans validation supplémentaire : la commande était la demande. Une idée tirée de la conversation se montre d'abord (« je note : n° … « <phrase> » ? »).
@@ -49,7 +49,7 @@ Une idée notée par l'utilisateur lui-même, avec sa phrase, se commite sans va
    L'archi reste une intuition : `/start-project` y reviendra.
 4. **La faire valider**. Montrer la page, appliquer les corrections, puis l'écrire.
 5. **Mettre à jour la ligne** de `IDEAS.md`, par une modification ciblée de cette seule ligne :
-   - le statut devient `` `décrite` `` ;
+   - le statut devient `` `décrite` `` s'il était `` `brute` `` ; un autre statut (`retenue`, `en pause`…) ne change pas ;
    - la colonne « Page » reçoit `[page](ideas/<nnnn>-<slug>.md)` ;
    - les autres cellules et les autres lignes ne changent pas.
 6. **Le commit** : par `git-ops`, avec le message `docs(ideas): describe idea <n>, <titre court>`. Il contient les deux fichiers.
@@ -87,13 +87,13 @@ Rends le hash du commit. Si une étape échoue ou si un hook la refuse, arrête-
 - **Message entre guillemets doubles**, avec les mêmes précautions que la phrase : pas de `$`, de backtick ni de guillemet double dedans.
 - **Push refusé** (une idée notée ailleurs entre-temps) :
   - pour une nouvelle idée, faire annuler le commit par `git-ops` (`git -C project-ideas reset --soft HEAD~1`, puis `git -C project-ideas restore --staged --worktree -- IDEAS.md`), puis recommencer une fois la section 2 à partir du script, qui refait le pull et renumérote ;
-  - pour une page ou un statut, faire récupérer les modifications par `git-ops` (`git -C project-ideas pull --rebase`). Il s'arrête sur un conflit, et le skill le rapporte sans le résoudre seul.
+  - pour une page ou un statut, faire récupérer les modifications par `git-ops` (`git -C project-ideas pull --rebase`), puis repousser (`git -C project-ideas push`). Sur un conflit, `git-ops` s'arrête, et le skill le rapporte sans le résoudre seul.
 - **Mode essai** : pas d'appel à `git-ops`.
 
 ## 6. Rendre compte
 
 ```
-**/project-idea** : idée n° <n> « <phrase> » — <brute | décrite, page ideas/… | statut <statut>>, commit <hash> poussé
+**/project-idea** : idée n° <n> « <phrase> » — <brute | <statut>, page ideas/… | statut <statut>>, commit <hash> poussé
 ```
 
 Ajouter, s'il y en a : les idées proches, les détails gardés pour la page, et la suite naturelle. Pour une idée `brute`, c'est `/project-idea page <n>`. Pour une idée `décrite`, c'est la retenir. Pour une idée `retenue`, c'est `/start-project <n>`.

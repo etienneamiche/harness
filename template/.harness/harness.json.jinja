@@ -125,7 +125,8 @@
     "^_template\\.md$",
     "^\\.claude/",
     "^\\.harness/",
-    "^\\.github/"
+    "^\\.github/"{% if kind == 'root' %},
+    "^project-ideas/(IDEAS\\.md$|_template\\.md$|ideas/)"{% endif %}
   ],
   "debugPatterns": [
     "console\\.(log|debug)\\(",

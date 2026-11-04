@@ -8,6 +8,7 @@ BeforeDiscovery {
     # Certains tests dépendent du type de dépôt (gitflow ou non) : on lit sa config.
     $cfg = Get-Content (Join-Path $PSScriptRoot '..' 'harness.json') -Raw | ConvertFrom-Json
     $Gitflow = [bool] $cfg.requireIssueRef
+    $IsRoot = $cfg.kind -eq 'root'
     $HasReact = Test-Path (Join-Path $PSScriptRoot '..' 'modules' 'react')
     $HasDotnet = Test-Path (Join-Path $PSScriptRoot '..' 'modules' 'dotnet')
     $Tools = @(Get-ChildItem (Join-Path $PSScriptRoot '..' 'tools') -File -Filter '*.ps1' | ForEach-Object { @{ name = $_.Name; path = $_.FullName } })
@@ -412,6 +413,12 @@ Describe 'règles d''information' {
     }
     It 'doc-sprawl ignore docs/ et README' -ForEach @(@{ path = 'docs/guide.md' }, @{ path = 'README.md' }) {
         (Invoke-Hook -EventName 'PostToolUse' -Data (Tool 'Write' @{ file_path = (Join-Path $script:Root $path); content = 'x' })).Decision | Should -Be 'allow'
+    }
+    It 'doc-sprawl ignore à la racine les fichiers de project-ideas (<path>)' -Skip:(-not $IsRoot) -ForEach @(@{ path = 'project-ideas/IDEAS.md' }, @{ path = 'project-ideas/ideas/0007-carnet.md' }) {
+        (Invoke-Hook -EventName 'PostToolUse' -Data (Tool 'Write' @{ file_path = (Join-Path $script:Root $path); content = 'x' })).Decision | Should -Be 'allow'
+    }
+    It 'doc-sprawl signale toujours un autre Markdown de project-ideas' -Skip:(-not $IsRoot) {
+        (Invoke-Hook -EventName 'PostToolUse' -Data (Tool 'Write' @{ file_path = (Join-Path $script:Root 'project-ideas/notes.md'); content = 'x' })).Decision | Should -Be 'context'
     }
     It 'structural-watch signale un bloc structurel' {
         (Invoke-Hook -EventName 'PostToolUse' -Data (Tool 'Edit' @{ file_path = (Join-Path $script:Root 'scripts/launch.ps1') })).Reason | Should -Match '/upstream'
