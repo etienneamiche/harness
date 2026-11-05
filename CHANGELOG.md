@@ -26,6 +26,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versions : [s
 - **`doctor -Fix` respecte `HARNESS_SKIP_PLUGINS`** : il installait quand même les plugins manquants, et `claude plugin install` réécrit `.claude/settings.json` (harness#4), que le doctor voyait ensuite comme un fichier du harness modifié.
 - `git-guard` ne prend plus le texte d'un message de commit pour des options : un corps qui cite `-Days` ou `--no-verify` n'est plus refusé comme un `git commit -a`. `git commit --all` est refusé, comme `-a`.
 - `git-guard` ne prend plus `git merge-base` ni `git merge-tree`, des lectures, pour une fusion réservée à `git-ops`.
+- `git-guard` voit les interdits confiés à un autre programme : `bash -c '…'`, `pwsh -Command`, `iex`, `eval`, un tube ou un heredoc vers un shell. Dès qu'un tel programme figure dans la commande, les chaînes ne sont plus retirées de l'analyse, ce qui peut refuser `bash x.sh && git commit -m "parle de --no-verify"`. `(git add -A)` et `$(git add .)` sont refusés, comme `git add -A`.
 - `Get-Help` affiche enfin l'aide des outils du harness (`doctor`, `post-install`, `board`, `merge-pr`, `write-manifest`, `tools/test.ps1`) : leur bloc d'aide, collé à la ligne `#Requires`, n'était pas reconnu. `write-manifest.ps1` reçoit une aide, et un autotest vérifie celle de chaque outil.
 
 ### Modifié

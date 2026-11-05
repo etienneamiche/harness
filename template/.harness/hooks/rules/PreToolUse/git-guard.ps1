@@ -49,6 +49,8 @@
         # le texte reste visible (au pire, un refus de trop). Une option seule entre guillemets
         # ("--no-verify", '-a', ".", '--force-with-lease=x') reste une option, sauf comme valeur de -m / --message.
         # --% (pwsh) passe la suite telle quelle à git : il est remplacé par une espace, et la suite reste visible.
+        # Le nom d'un programme qui exécute du texte reste lui aussi visible, seul entre guillemets ("C:\…\bash.exe").
+        $runners = 'bash|sh|zsh|dash|ksh|ash|fish|csh|tcsh|pwsh|powershell|cmd|comspec|wsl|ssh|watch|python\d*|py|node|perl|ruby|php|iex|invoke-expression|invoke-command|invokescript|scriptblock|eval|source'
         function Get-BareCommand([string] $s) {
             $out = [Text.StringBuilder]::new()
             $smart = '[\u2018-\u201F]'
@@ -99,7 +101,7 @@
                     $literal = $null -ne $content -and $content -notmatch $smart -and ($c -eq "'" -or ($content -notmatch '[$`]' -and $content -notmatch '\\(?![\w./:-])'))
                     if ($literal) {
                         $isMessage = $out.ToString() -match '(^|\s)(-m|--message)(\s+|=)$'
-                        if ($content -match '^(-{1,2}[\w-]+(=\S*)?|\.|\+\S+)$' -and -not $isMessage) { [void] $out.Append($content) } else { [void] $out.Append("''") }
+                        if ($content -match ('^(-{1,2}[\w-]+(=\S*)?|\.|\+\S+|(.*[\\/])?(' + $runners + ')(\.exe)?)$') -and -not $isMessage) { [void] $out.Append($content) } else { [void] $out.Append("''") }
                         $i = $close + 1; continue
                     }
                     $rest = $true
@@ -110,12 +112,17 @@
             $out.ToString()
         }
         $bare = & $normalize (Get-BareCommand $raw)
+        # Une chaîne confiée à un shell n'est plus du texte : c'est une commande. Dès qu'un programme qui exécute
+        # du texte figure hors des chaînes (ou un `-c '…'` derrière un programme inconnu, ou le `.` de bash), rien
+        # n'est masqué, et les guillemets deviennent des espaces pour que `bash -c 'git add -A'` se lise comme
+        # `git add -A`. Au pire un refus de trop : `bash x.sh && git commit -m "parle de --no-verify"`.
+        if ($bare -match ('(?<![\w.$-])(' + $runners + ')(\.exe)?(?![\w-])|(?-i:\s-[a-z]*c)\s+[''"]|(^|[;&|(\n])\s*\.\s')) { $bare = $cmd -replace '[''"`]', ' ' }
         $forbidden = [ordered]@{
             'git\s+worktree\b'                                   = 'les worktrees sont interdits : on travaille par branches simples.'
             'git\s+rebase\b[^;&|]*\s(-i|--interactive)\b'        = 'le rebase interactif est interdit.'
             'git\s+push\b[^;&|]*(\s--force(-with-lease)?\b|\s-f\b|\s\+\S)' = 'le push forcé est interdit.'
             '--no-verify\b'                                      = 'contourner les hooks Git (--no-verify) est interdit.'
-            'git\s+add\b[^;&|]*\s(-A|--all|\.)(?=\s|$|;|&|\|)'   = "git add -A / git add . sont interdits : ajouter les fichiers un par un, après les avoir vérifiés."
+            'git\s+add\b[^;&|]*\s(-A|--all|\.)(?=\s|$|;|&|\||\))' = "git add -A / git add . sont interdits : ajouter les fichiers un par un, après les avoir vérifiés."
             'git\s+commit\b[^;&|]*\s(-(?!-)[a-zA-Z]*a|--all\b)' = "git commit -a est interdit : ajouter les fichiers un par un."
         }
         foreach ($pattern in $forbidden.Keys) {
