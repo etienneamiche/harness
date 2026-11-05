@@ -30,7 +30,7 @@ L'idée arrive en une phrase (`/project-idea "…"`), ou au fil de la conversati
 
 1. **La phrase** : une ligne courte, qui dit ce qu'on construirait (« Carnet de recettes partagé avec la famille »). Une idée donnée en plusieurs phrases se résume en une. Les détails ne sont pas perdus : les citer dans le compte rendu, pour la future page. Si la demande ne dit pas clairement quelle idée noter, demander la phrase.
 2. **Les idées proches** : lire `IDEAS.md`. Une idée qui dit la même chose avec d'autres mots se signale, avec son numéro et son statut, et on demande s'il faut quand même noter la nouvelle. Le script ne repère que les doublons exacts.
-3. **L'ajout** : `pwsh -NoProfile -File project-ideas/scripts/idea.ps1 "<phrase>" -NoCommit`. La phrase est entre guillemets doubles : une apostrophe y est courante. Un `$`, un backtick ou un guillemet double dans la phrase se reformule sans eux. Une commande Git écrite en clair aussi (« git push », « git reset ») : `git-guard` refuserait la commande entière. Si le script refuse (doublon, `IDEAS.md` modifié, branche autre que `main`, pull impossible), rapporter son message tel quel et s'arrêter.
+3. **L'ajout** : `pwsh -NoProfile -File project-ideas/scripts/idea.ps1 "<phrase>" -NoCommit`. La phrase est entre guillemets doubles : une apostrophe y est courante. Un `$`, un backtick ou un guillemet double dans la phrase se reformule sans eux. Une commande Git ou GitHub écrite en clair aussi (« git push », « gh pr create ») : un hook refuserait la commande entière. Si le script refuse (doublon, `IDEAS.md` modifié, branche autre que `main`, pull impossible), rapporter son message tel quel et s'arrêter.
 4. **Le commit** : par `git-ops` (section 5), avec le message `docs(ideas): add idea <n>, <phrase>`.
 
 Une idée notée par l'utilisateur lui-même, avec sa phrase, se commite sans validation supplémentaire : la commande était la demande. Une idée tirée de la conversation se montre d'abord (« je note : n° … « <phrase> » ? »).
@@ -87,7 +87,7 @@ Rends le hash du commit. Si une étape échoue ou si un hook la refuse, arrête-
 - **Message entre guillemets doubles**, avec les mêmes précautions que la phrase : pas de `$`, de backtick ni de guillemet double dedans.
 - **Push refusé** (une idée notée ailleurs entre-temps) :
   - pour une nouvelle idée, faire annuler le commit par `git-ops` (`git -C project-ideas reset --soft HEAD~1`, puis `git -C project-ideas restore --staged --worktree -- IDEAS.md`), puis recommencer une fois la section 2 à partir du script, qui refait le pull et renumérote ;
-  - pour une page ou un statut, faire récupérer les modifications par `git-ops` (`git -C project-ideas pull --rebase`), puis repousser (`git -C project-ideas push`). Sur un conflit, `git-ops` s'arrête, et le skill le rapporte sans le résoudre seul.
+  - pour une page ou un statut, faire récupérer les modifications par `git-ops` (`git -C project-ideas pull --rebase`), puis repousser (`git -C project-ideas push`) et rendre le nouveau hash, car le rebase réécrit le commit. Sur un conflit, `git-ops` s'arrête, et le skill le rapporte sans le résoudre seul.
 - **Mode essai** : pas d'appel à `git-ops`.
 
 ## 6. Rendre compte
