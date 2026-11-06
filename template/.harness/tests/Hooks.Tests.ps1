@@ -299,6 +299,110 @@ Describe 'git-guard : le texte d''un message n''est pas une option' {
         @{ label = 'script pwsh puis message'; cmd = 'pwsh -NoProfile -File scripts/test.ps1 && git commit -m "feat(scripts): add -Days to clean-exports (#5)"' }
         @{ label = 'outil du harness'; cmd = 'pwsh -NoProfile -File .harness/tools/merge-pr.ps1 -Pr 3 -Subject "fix: y (#1)"' }
     ) { (Invoke-Hook -Data (Bash $cmd 'git-ops')).Decision | Should -Be 'allow' }
+    It 'accepte un chemin relatif Windows dans git add (<cmd>)' -ForEach @(
+        @{ cmd = 'git add .\src\app.ts' }, @{ cmd = 'git add .\.harness\tools\doctor.ps1' }, @{ cmd = 'git add .\CHANGELOG.md .\README.md' }, @{ cmd = 'git add ".\src\app.ts"' }
+    ) { (Invoke-Hook -Data (Bash $cmd 'git-ops')).Decision | Should -Be 'allow' }
+    It 'refuse toujours git add . (<cmd>)' -ForEach @(
+        @{ cmd = 'git add .\' }, @{ cmd = 'git add .>x' }, @{ cmd = '(git add .)' }, @{ cmd = "bash -c `$'git add .\n'" }
+    ) { (Invoke-Hook -Data (Bash $cmd 'git-ops')).Reason | Should -Match 'git add -A' }
+    It 'reconnaît une option de texte dans sa commande (<label>)' -ForEach @(
+        @{ label = 'apostrophe doublée, commit'; cmd = "git commit -m 'docs: l''option --no-verify est interdite (#1)'" }
+        @{ label = 'apostrophe doublée, -Days'; cmd = "git commit -m 'feat(scripts): l''option -Days est ajoutée (#5)'" }
+        @{ label = 'apostrophe doublée, gh'; cmd = "gh issue comment 1 --body 'L''option --no-verify est interdite'" }
+        @{ label = 'apostrophe doublée, merge-pr'; cmd = "pwsh -NoProfile -File .harness/tools/merge-pr.ps1 -Pr 3 -Subject 'docs: l''option --no-verify est interdite (#1)'" }
+        @{ label = 'affectation, commit'; cmd = '$r = git commit -m "feat(scripts): add -Days (#5)"' }
+        @{ label = 'affectation, gh'; cmd = "`$url = gh pr create --title x --body 'Never use --no-verify'" }
+        @{ label = 'if pwsh'; cmd = 'if ($?) { git commit -m "feat(scripts): add -Days (#5)" }' }
+        @{ label = 'if après une commande'; cmd = 'git add a.txt; if ($LASTEXITCODE -eq 0) { git commit -m "feat(scripts): add -Days (#5)" }' }
+        @{ label = 'try'; cmd = "try { git commit -m 'docs: --no-verify (#1)' } catch { throw }" }
+        @{ label = 'bloc'; cmd = '{ git commit -m "docs: --no-verify (#1)"; }' }
+        @{ label = 'if bash'; cmd = 'if git commit -m "docs: --no-verify (#1)"; then echo ok; fi' }
+        @{ label = 'négation'; cmd = '! git commit -m "docs: --no-verify (#1)"' }
+        @{ label = 'variable d''environnement'; cmd = 'GIT_AUTHOR_DATE=2026-01-01 git commit -m "feat(scripts): add -Days (#5)"' }
+        @{ label = 'env'; cmd = 'env X=1 git commit -m "docs: --no-verify (#1)"' }
+        @{ label = 'time'; cmd = 'time git commit -m "docs: --no-verify (#1)"' }
+        @{ label = 'chemin vers git'; cmd = '/usr/bin/git commit -m "docs: --no-verify (#1)"' }
+        @{ label = 'git.exe entre guillemets'; cmd = '& "C:\Program Files\Git\cmd\git.exe" commit -m "docs: --no-verify (#1)"' }
+        @{ label = 'parenthèse dans un dossier'; cmd = 'git -C "C:\Program Files (x86)\app" commit -m "feat(scripts): add -Days (#5)"' }
+        @{ label = 'parenthèse dans un auteur'; cmd = "git commit --author='A (B) <a@b.c>' -m `"docs: --no-verify (#1)`"" }
+        @{ label = 'parenthèse dans un milestone'; cmd = "gh issue create --milestone 'v1 (beta)' --title x --body 'Never use --no-verify'" }
+        @{ label = '; dans un titre, puis heredoc'; cmd = "gh pr create --title `"feat: a; b`" --body-file - <<'EOF'`nNever use --no-verify`nEOF" }
+        @{ label = '& dans un titre, puis heredoc'; cmd = "gh pr create --title 'a & b' --body-file - <<'EOF'`nNever use --no-verify`nEOF" }
+        @{ label = 'accolades dans un mot'; cmd = 'git commit-tree HEAD^{tree} -p HEAD -m "docs: --no-verify (#1)"' }
+        @{ label = 'gh issue close --comment'; cmd = 'gh issue close 1 --comment "Never use --no-verify"' }
+        @{ label = 'gh issue close -c'; cmd = 'gh issue close 1 -c "Never use --no-verify"' }
+        @{ label = 'gh pr close --comment'; cmd = 'gh pr close 1 --comment "Never use --no-verify"' }
+        @{ label = 'option avec ='; cmd = "git commit --message='docs: --no-verify (#1)'" }
+        @{ label = '-Subject:'; cmd = '.harness/tools/merge-pr.ps1 -Pr 3 -Subject:"docs: --no-verify (#1)"' }
+        @{ label = '-subject en minuscules'; cmd = '.harness/tools/merge-pr.ps1 -Pr 3 -subject "docs: --no-verify (#1)"' }
+        @{ label = 'pwsh avec une valeur avant -File'; cmd = 'pwsh -ExecutionPolicy Bypass -File .harness/tools/merge-pr.ps1 -Pr 3 -Subject "docs: --no-verify (#1)"' }
+        @{ label = 'trailer'; cmd = 'git commit -m "docs: x (#1)" --trailer "Note: never --no-verify"' }
+    ) { (Invoke-Hook -Data (Bash $cmd 'git-ops')).Decision | Should -Be 'allow' }
+    It 'accepte un texte écrit ou cherché, sans programme qui l''exécute (<label>)' -ForEach @(
+        @{ label = 'here-string vers gh'; cmd = "@'`nNever git add -A now.`n'@ | gh pr comment 3 -F -" }
+        @{ label = 'here-string vers git'; cmd = "@'`ndocs: never git add -A now (#1)`n'@ | git commit -F -" }
+        @{ label = 'here-string vers un fichier'; cmd = "@'`nNever git add -A now.`n'@ | Set-Content c.md" }
+        @{ label = 'Set-Content -Value'; cmd = "Set-Content c.md -Value @'`nNever git add -A now.`n'@" }
+        @{ label = 'variable $text'; cmd = "`$text = @'`nNever git add -A now.`n'@" }
+        @{ label = 'variable $content'; cmd = "`$content = @'`nNever git add -A now.`n'@" }
+        @{ label = 'variable $review'; cmd = "`$review = @'`nNever git add -A now.`n'@" }
+        @{ label = 'variable $report'; cmd = "`$report = @'`nNever git add -A now.`n'@" }
+        @{ label = 'variable bash puis -m'; cmd = "msg='docs: --no-verify (#1)'; git commit -m `"`$msg`"" }
+        @{ label = 'variable bash puis --body'; cmd = "body='Never git add -A'; gh issue comment 1 --body `"`$body`"" }
+        @{ label = 'variable bash et heredoc'; cmd = "BODY=`$(cat <<'EOF'`nNever git add -A`nEOF`n); gh issue comment 1 --body `"`$BODY`"" }
+        @{ label = 'variable +='; cmd = "`$body += 'Never git add -A'" }
+        @{ label = 'variable de portée'; cmd = "`$script:body = 'Never git add -A'" }
+        @{ label = 'variable typée'; cmd = "[string]`$body = 'Never git add -A'" }
+        @{ label = 'variable d''environnement'; cmd = "`$env:MESSAGE = 'Never git add -A'" }
+        @{ label = 'heredoc >>'; cmd = "cat >> x.md <<'EOF'`nNever git add -A`nEOF" }
+        @{ label = 'heredoc tee'; cmd = "tee x.md <<'EOF'`nNever git add -A`nEOF" }
+        @{ label = 'heredoc, fichier avec une espace'; cmd = "cat > 'x y.md' <<'EOF'`nNever git add -A`nEOF" }
+        @{ label = 'heredoc, fichier entre guillemets'; cmd = "cat > `"x.md`" <<'EOF'`nNever git add -A`nEOF" }
+        @{ label = 'heredoc dans un sous-shell'; cmd = "(cat > x.md <<'EOF'`nNever git add -A`nEOF`n)" }
+        @{ label = 'heredoc .markdown'; cmd = "cat > x.markdown <<'EOF'`nNever git add -A`nEOF" }
+        @{ label = 'heredoc .MD'; cmd = "cat > x.MD <<'EOF'`nNever git add -A`nEOF" }
+        @{ label = 'gh issue list --search'; cmd = "gh issue list --state open --search 'git add -A refus'" }
+        @{ label = 'gh pr list -S'; cmd = "gh pr list -S 'git add -A'" }
+        @{ label = 'git log -S'; cmd = "git log -S'git add -A'" }
+        @{ label = 'git log -G'; cmd = "git log -G'--no-verify x'" }
+        @{ label = 'git log --grep'; cmd = 'git log --grep "bad --no-verify"' }
+        @{ label = 'git grep -e'; cmd = "git grep -e 'git add -A'" }
+    ) { (Invoke-Hook -Data (Bash $cmd 'git-ops')).Decision | Should -Be 'allow' }
+    It 'ne prend pas pour du texte ce qu''un programme peut exécuter (<label>)' -ForEach @(
+        @{ label = 'merge-pr cité par echo'; cmd = "echo merge-pr.ps1 -Subject '; git push --force origin x' | bash" }
+        @{ label = 'merge-pr cité par eval'; cmd = "eval echo merge-pr.ps1 -Subject 'x; git push --force origin x'" }
+        @{ label = 'merge-pr cité par bash -c'; cmd = "bash -c '`$2' merge-pr.ps1 -Subject 'git push --force origin x'" }
+        @{ label = 'merge-pr cité par ssh'; cmd = "ssh hote merge-pr.ps1 -Subject 'x; git push --force origin x'" }
+        @{ label = 'merge-pr et substitution'; cmd = "echo merge-pr.ps1 -Subject `"`$(cat <<'EOF'`n; git push --force origin x`nEOF`n)`" | bash" }
+        @{ label = 'pwsh -Command'; cmd = "pwsh -Command merge-pr.ps1 -Subject 'x; git push --force origin x'" }
+        @{ label = 'autre programme, git'; cmd = "git-wrapper.sh -m 'git push --force origin x'" }
+        @{ label = 'autre programme, git.sh'; cmd = "git.sh --message 'git push --force origin x'" }
+        @{ label = 'autre programme, gh'; cmd = "gh-run.sh --body 'git push --force origin x'" }
+        @{ label = 'sous-commande qui lance une commande'; cmd = "git bisect run bash -c -m 'git push --force origin x'" }
+        @{ label = '-t de gh pr list'; cmd = "gh pr list --json number -t 'git push --force origin x' | bash" }
+        @{ label = '-t de gh api'; cmd = "gh api /meta -t 'git push --force origin x' | bash" }
+        @{ label = '-m en fin de ligne'; cmd = "git status -m`n'git push --force origin x' | iex" }
+        @{ label = '-m de commit en fin de ligne'; cmd = "git commit -m`n'git push --force origin x' | iex" }
+        @{ label = '-t en fin de ligne'; cmd = "gh pr list -t`n'git push --force origin x' | iex" }
+        @{ label = 'variable en fin de ligne'; cmd = "`$body`n'git push --force origin x' | iex" }
+        @{ label = 'variable tenant lieu de programme'; cmd = "msg=eval; `$msg 'git push --force origin x'" }
+        @{ label = 'variable dans un tube'; cmd = "`$msg = 'git push --force origin x' | iex" }
+        @{ label = 'here-string dans un tube'; cmd = "`$body = @'`ngit push --force origin x`n'@ | bash" }
+        @{ label = 'git log -F, tube vers sh'; cmd = "git log -F - | sh <<'EOF'`ngit push --force origin x`nEOF" }
+        @{ label = 'heredoc vers un shell, puis vers un fichier'; cmd = "bash <<'B'; cat > x.md <<'A'`ngit push --force origin x`nB`nnotes`nA" }
+        @{ label = 'heredoc vers un shell, puis vers git'; cmd = "sh <<'B' && git commit -F - <<'A'`ngit push --force origin x`nB`nmsg (#1)`nA" }
+        @{ label = 'here-string vers un fichier, puis un shell'; cmd = "@'`ngit push --force origin x`n'@ | Set-Content c.md | bash" }
+        @{ label = 'fichier qui n''est pas du texte'; cmd = "@'`ngit push --force origin x`n'@ | Set-Content c.ps1" }
+    ) { (Invoke-Hook -Data (Bash $cmd 'git-ops')).Reason | Should -Match 'push forc' }
+    It 'dit sans se tromper quand un interdit est cité (<label>)' -ForEach @(
+        @{ label = 'here-string en entrée'; cmd = 'git add -A <<<x'; cited = $false }
+        @{ label = 'heredoc à côté'; cmd = "git add -A; cat > x.md <<'EOF'`nnotes`nEOF"; cited = $false }
+        @{ label = 'variable à côté'; cmd = "`$body = @'`ny`n'@; git add -A"; cited = $false }
+        @{ label = 'dans une chaîne'; cmd = "bash -c 'git add -A'"; cited = $true }
+    ) {
+        $reason = (Invoke-Hook -Data (Bash $cmd 'git-ops')).Reason
+        if ($cited) { $reason | Should -Match 'lu comme une commande' } else { $reason | Should -Not -Match 'lu comme une commande' }
+    }
     It 'préfère un refus de trop sur un texte qu''aucune option de texte ne porte, et explique pourquoi (<label>)' -ForEach @(
         @{ label = 'grep'; cmd = "grep -rn 'git add -A' source/" }
         @{ label = 'grep -c'; cmd = "grep -c 'git add -A' CHANGELOG.md" }
