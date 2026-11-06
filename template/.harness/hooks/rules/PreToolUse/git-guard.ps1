@@ -65,7 +65,7 @@
             'gh release create' = '-n', '--notes', '-t', '--title'; 'gh release edit' = '-n', '--notes', '-t', '--title'
             'merge-pr.ps1' = @('-Subject'); 'text-file' = '-Value', '-InputObject'
         }
-        $textName = '(?:\w+:)?\w*(?:body|comment|content|message|msg|notes|report|review|subject|text|title)\w*'
+        $textName = '(?:\w+:)?(?!\w*context)\w*(?:body|comment|content|message|msg|notes|report|review|subject|text|title)\w*'
         $textFile = '\.(?:md|markdown|txt)$'
 
         # Le texte de la commande, en morceaux dans l'ordre (Pieces), et ses commandes, chacune avec ses mots.
@@ -79,7 +79,16 @@
             $pieces = [Collections.Generic.List[hashtable]]::new()
             $commands = [Collections.Generic.List[hashtable]]::new()
             $docs = [Collections.Generic.Queue[hashtable]]::new()
-            $st = @{ Plain = [Text.StringBuilder]::new(); Command = $null; Word = $null }
+            $groups = [Collections.Generic.Stack[hashtable]]::new()
+            $st = @{ Plain = [Text.StringBuilder]::new(); Command = $null; Word = $null; Group = $null }
+            # ( ou { ouvre un groupe. Après un mot (iex (…), $(…)), sa sortie va à ce mot : son texte reste visible.
+            $openGroup = { param([bool] $fed) $groups.Push(@{ From = $commands.Count; Fed = $fed }) }
+            $closeGroup = {
+                if ($groups.Count) {
+                    $st.Group = $groups.Pop()
+                    if ($st.Group.Fed) { for ($k = $st.Group.From; $k -lt $commands.Count; $k++) { $commands[$k].Rest = $true } }
+                }
+            }
             $flush = { if ($st.Plain.Length) { $pieces.Add(@{ Raw = $st.Plain.ToString(); Mask = $null; Hide = $false }); [void] $st.Plain.Clear() } }
             $open = {
                 if ($null -eq $st.Command) {
@@ -138,13 +147,27 @@
                     continue
                 }
                 elseif ([char]::IsWhiteSpace($s[$i])) { & $between $c $false $false; $i++; continue }
-                elseif ($c -in ';', '&', '(', ')') { & $between $c $true $false; $i++; continue }
-                elseif ($c -eq '|') { & $between $c $true ($i + 1 -lt $n -and $s[$i + 1] -ne '|'); $i++; continue }
+                # 2>&1, >&2, &>x : une redirection, pas la fin de la commande.
+                elseif ($c -eq '&' -and (($i -gt 0 -and $s[$i - 1] -eq '>') -or ($i + 1 -lt $n -and $s[$i + 1] -eq '>'))) { & $plain $c; $i++; continue }
+                elseif ($c -in ';', '&') { & $between $c $true $false; $i++; continue }
+                elseif ($c -eq '(') { & $openGroup ($null -ne $st.Command); & $between $c $true $false; $i++; continue }
+                elseif ($c -eq ')') { & $between $c $true $false; & $closeGroup; $i++; continue }
+                elseif ($c -eq '|') {
+                    if ($i + 1 -lt $n -and $s[$i + 1] -eq '|') { & $between '||' $true $false; $i += 2; continue }
+                    # Sans commande en cours, le tube prend la sortie de ce qui précède : un groupe (…) | x, ou la ligne d'avant (⏎| x, pwsh 7).
+                    if ($null -eq $st.Command -and $commands.Count) {
+                        $from = if ($null -ne $st.Group) { $st.Group.From } else { $commands.Count - 1 }
+                        for ($k = $from; $k -lt $commands.Count; $k++) { $commands[$k].Piped = $true }
+                    }
+                    & $between $c $true $true; $i++; continue
+                }
                 elseif ($c -eq '{' -or $c -eq '}') {
                     # Dans un mot, c'est une partie du mot : HEAD^{tree}, stash@{0}, ${x}.
                     $after = $i + 1 -ge $n -or [char]::IsWhiteSpace($s[$i + 1])
                     $inside = $null -ne $st.Word -and (($c -eq '{' -and -not $after) -or ($c -eq '}' -and $st.Word.Text.Contains('{')))
-                    if ($inside) { & $plain $c } else { & $between $c $true $false }
+                    if ($inside) { & $plain $c }
+                    elseif ($c -eq '{') { & $openGroup $false; & $between $c $true $false }
+                    else { & $between $c $true $false; & $closeGroup }
                     $i++; continue
                 }
                 elseif ($c -eq '\') {
@@ -223,12 +246,25 @@
             if ($name -imatch '^(pwsh|powershell)(\.exe)?$') {
                 # pwsh -File <script> : ce qui suit n'est pas exécuté par pwsh. Pas -Command, ni une commande encodée.
                 for ($j = 0; $j -lt $after.Count - 1; $j++) {
-                    if ($after[$j] -imatch '^-(c|command|e|ec|encodedcommand)$') { return $null }
+                    if ($after[$j] -imatch '^-(c\w*|e|ec|en\w*)$') { return $null }
                     if ($after[$j] -imatch '^-f(ile)?$') { return $(if (($after[$j + 1] -split '[\\/]')[-1] -ieq 'merge-pr.ps1') { 'merge-pr.ps1' }) }
                 }
                 return $null
             }
-            if ($name -in 'Set-Content', 'Add-Content', 'Out-File' -and @($after -match $textFile).Count) { return 'text-file' }
+            if ($name -in 'Set-Content', 'Add-Content', 'Out-File') {
+                # Le fichier écrit, et lui seul : pas la valeur, ni plusieurs cibles. -PassThru rend le texte à qui le demande.
+                $target = $null
+                for ($j = 0; $j -lt $after.Count; $j++) {
+                    if ($after[$j] -imatch '^-pas') { return $null }
+                    if ($after[$j] -imatch '^-(path|literalpath|filepath)$') { $target = if ($j + 1 -lt $after.Count) { $after[$j + 1] }; $j++ }
+                    elseif ($after[$j] -imatch '^-(value|inputobject|encoding)$') { $j++ }
+                    elseif ($after[$j] -notmatch '^-') {
+                        if ($after[$j] -match '^,') { return $null }
+                        if ($null -eq $target) { $target = $after[$j] }
+                    }
+                }
+                if ($target -imatch $textFile -and $target -notmatch ',') { return 'text-file' }
+            }
             $null
         }
         # La commande écrit-elle ce qu'elle reçoit dans un texte de git ou de gh (-F -), ou dans un fichier de texte ?
@@ -258,7 +294,7 @@
                 if ($w.Count -eq 1 -and $words[0].Lead -eq '' -and $null -ne $next -and (Test-TextSink $next)) { $hide += $words[0] }
                 # La valeur d'une option de texte : séparée de l'option (-m '…'), ou collée (--body='…', -Subject:'…', -S'…').
                 $program = Get-Program $w
-                if ($program -and $textOptions.ContainsKey($program)) {
+                if ($program -and $textOptions.ContainsKey($program) -and -not ($program -eq 'text-file' -and ($command.Piped -or $command.Rest))) {
                     $options = $textOptions[$program]
                     $anyCase = $program -in 'merge-pr.ps1', 'text-file'
                     $isOption = { param([string] $t) if ($anyCase) { $options -icontains $t } else { $options -ccontains $t } }
@@ -278,25 +314,30 @@
         Hide-CarriedText $split.Commands
         # Les guillemets se lisent comme des espaces après la normalisation : `bash -c 'git add -A'` se lit comme
         # `git add -A`, et `git -C "a b" commit -a` garde son dossier d'un seul tenant le temps de le retirer.
+        # Dans $'…', \n, \r et \t sont des blancs. >& est une redirection : son & ne coupe pas un motif.
         $render = {
             param([bool] $allCited)
             $text = -join @(foreach ($p in $split.Pieces) { if ($p.Hide -or ($allCited -and $null -ne $p.Mask)) { $p.Mask } else { $p.Raw } })
-            (& $normalize $text) -replace '[''"`]', ' '
+            if ($text.Contains("`$'")) { $text = $text -replace '\\[nrt]', ' ' }
+            ((& $normalize $text) -replace '[''"`]', ' ').Replace('>&', '> ')
         }
         $bare = & $render $false
+        # La même commande sans aucune chaîne : un ; & ou | cité y arrêterait les motifs, et cacherait une vraie option
+        # placée après lui (git add 'R&D.md' .).
+        $noText = & $render $true
         $forbidden = [ordered]@{
             'git\s+worktree\b'                                   = 'les worktrees sont interdits : on travaille par branches simples.'
             'git\s+rebase\b[^;&|]*\s(-i|--interactive)\b'        = 'le rebase interactif est interdit.'
             'git\s+push\b[^;&|]*(\s--force(-with-lease)?\b|\s-f\b|\s\+\S)' = 'le push forcé est interdit.'
             '--no-verify\b'                                      = 'contourner les hooks Git (--no-verify) est interdit.'
-            'git\s+add\b[^;&|]*\s((-A|--all)(?=\s|$|;|&|\||\)|>|\\)|\.(?=\s|$|;|&|\||\)|>|\\[nrt]?(?:\s|$)))' = "git add -A / git add . sont interdits : ajouter les fichiers un par un, après les avoir vérifiés."
+            'git\s+add\b[^;&|]*\s((-A|--all)(?=\s|$|;|&|\||\)|\}|>|\\)|\.(?:[\\/]\.?)*(?=\s|$|;|&|\||\)|\}|>))' = "git add -A / git add . sont interdits : ajouter les fichiers un par un, après les avoir vérifiés."
             'git\s+commit\b[^;&|]*\s(-(?!-)[a-zA-Z]*a|--all\b)' = "git commit -a est interdit : ajouter les fichiers un par un."
         }
         foreach ($pattern in $forbidden.Keys) {
-            if ($bare -cmatch $pattern) {
-                # Interdit vu seulement dans un texte cité (absent de la commande sans ses chaînes) : le dire,
-                # sinon le motif accuse d'une option absente.
-                $hint = if ((& $render $true) -cnotmatch $pattern) { " Ce texte cité a été lu comme une commande : s'il ne s'exécute pas, l'écrire dans un fichier (--body-file, -F) ou une variable de texte (`$body = …), et chercher dans le dépôt avec l'outil Grep, dans l'historique avec git log -S ou --grep, sur GitHub avec --search." } else { '' }
+            if ($bare -cmatch $pattern -or $noText -cmatch $pattern) {
+                # Interdit vu seulement dans un texte cité, même d'une chaîne que la règle ne sait pas analyser
+                # ("… $x …") : le dire, sinon le motif accuse d'une option absente.
+                $hint = if ($noText -cnotmatch $pattern -or (& $normalize ($raw -replace '(?s)"(?:[^"\\]|\\.)*"|''[^'']*''', ' ')) -cnotmatch $pattern) { " Ce texte cité a été lu comme une commande : s'il ne s'exécute pas, l'écrire dans un fichier (--body-file, -F) ou une variable de texte (`$body = …), et chercher dans le dépôt avec l'outil Grep, dans l'historique avec git log -S ou --grep, sur GitHub avec --search." } else { '' }
                 return @{ Decision = 'deny'; Reason = $forbidden[$pattern] + $hint }
             }
         }
