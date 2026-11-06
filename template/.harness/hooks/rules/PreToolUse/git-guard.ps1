@@ -156,7 +156,7 @@
                     if ($i + 1 -lt $n -and $s[$i + 1] -eq '|') { & $between '||' $true $false; $i += 2; continue }
                     # Sans commande en cours, le tube prend la sortie de ce qui précède : un groupe (…) | x, ou la ligne d'avant (⏎| x, pwsh 7).
                     # Une redirection placée entre les deux ((…) 2>&1 | x) ne change rien : elle est lue comme une commande.
-                    if (($null -eq $st.Command -or ($st.Command.Words.Count -and $st.Command.Words[0].Text -match '^\d*&?[<>]')) -and $commands.Count) {
+                    if (($null -eq $st.Command -or ($st.Command.Words.Count -and $st.Command.Words[0].Text -match '^[\d*]*&?[<>]')) -and $commands.Count) {
                         $from = if ($null -ne $st.Group) { $st.Group.From } else { $commands.Count - 1 }
                         for ($k = $from; $k -lt $commands.Count; $k++) { $commands[$k].Piped = $true }
                     }
@@ -247,7 +247,7 @@
             if ($name -imatch '^(pwsh|powershell)(\.exe)?$') {
                 # pwsh -File <script> : ce qui suit n'est pas exécuté par pwsh. Pas -Command, ni une commande encodée.
                 for ($j = 0; $j -lt $after.Count - 1; $j++) {
-                    if ($after[$j] -imatch '^[-/](c\w*|e|ec|en\w*)$') { return $null }
+                    if ($after[$j] -imatch '^(--?|/)(c\w*|e|ec|en\w*)$') { return $null }
                     if ($after[$j] -imatch '^-f(ile)?$') { return $(if (($after[$j + 1] -split '[\\/]')[-1] -ieq 'merge-pr.ps1') { 'merge-pr.ps1' }) }
                 }
                 return $null
@@ -258,12 +258,12 @@
                 $target = $null
                 for ($j = 0; $j -lt $after.Count; $j++) {
                     if ($after[$j] -imatch '^-(path|literalpath|filepath)$') { $target = if ($j + 1 -lt $after.Count) { $after[$j + 1] }; $j++ }
-                    elseif ($after[$j] -imatch '^-(value|inputobject|encoding)$') { $j++ }
+                    elseif ($after[$j] -imatch '^-(value|inputobject|encoding|erroraction|ea)$') { $j++ }
                     elseif ($after[$j] -notmatch '^-') {
                         if ($after[$j] -match '^,') { return $null }
                         if ($null -eq $target) { $target = $after[$j] }
                     }
-                    elseif ($after[$j] -inotmatch '^-(value|inputobject|encoding):|^-(force|nonewline|append|noclobber)$') { return $null }
+                    elseif ($after[$j] -inotmatch '^-(value|inputobject|encoding|erroraction|ea):|^-(force|nonewline|append|noclobber)$') { return $null }
                 }
                 if ($target -imatch $textFile -and $target -notmatch ',') { return 'text-file' }
             }
@@ -321,15 +321,15 @@
         $render = {
             param([bool] $allCited, [bool] $ansiC)
             $text = -join @(foreach ($p in $split.Pieces) { if ($p.Hide -or ($allCited -and $null -ne $p.Mask)) { $p.Mask } else { $p.Raw } })
-            if ($ansiC) { $text = [regex]::Replace($text, '\$''[^'']*''', { param($m) $m.Value -replace '\\[nrt]', ' ' }) }
+            if ($ansiC) { $text = [regex]::Replace($text, '(?<![^\s=(;|&])\$''(?:[^''\\]|\\.)*''', { param($m) $m.Value -replace '\\[nrt]', ' ' }) }
             & $unredirect ((& $normalize $text) -replace '[''"`]', ' ')
         }
         $bare = & $render $false $false
         # La même commande sans aucune chaîne : un ; & ou | cité y arrêterait les motifs, et cacherait une vraie option
         # placée après lui (git add 'R&D.md' .).
         $noText = & $render $true $false
-        # Dans $'…', \n, \r et \t sont des blancs. Une lecture de plus, jamais à la place des autres : 'x$' peut ressembler
-        # à l'ouverture d'un $'…', et y remplacer \n couperait le chemin C:\new qui suit.
+        # Dans $'…', qui commence un mot, \n, \r et \t sont des blancs. Une lecture de plus, jamais à la place des autres :
+        # 'a $' peut ressembler à l'ouverture d'un $'…', et y remplacer \n couperait le chemin C:\new qui suit.
         $ansiC = if ($raw.Contains("`$'")) { & $render $false $true } else { '' }
         $forbidden = [ordered]@{
             'git\s+worktree\b'                                   = 'les worktrees sont interdits : on travaille par branches simples.'

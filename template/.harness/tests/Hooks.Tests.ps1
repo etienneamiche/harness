@@ -306,9 +306,14 @@ Describe 'git-guard : le texte d''un message n''est pas une option' {
         @{ cmd = 'git add .\' }, @{ cmd = 'git add .>x' }, @{ cmd = '(git add .)' }, @{ cmd = "bash -c `$'git add .\n'" }
         @{ cmd = 'git add ./' }, @{ cmd = 'git add .\.' }, @{ cmd = 'git add ./.' }, @{ cmd = '& { git add -A}' }, @{ cmd = 'if ($true) {git add .}' }
         @{ cmd = "bash -c `$'git add ./\n'" }, @{ cmd = "`$'git add .\t'" }
+        @{ cmd = "echo 'a`$'; bash -c `$'git add .\n'" }, @{ cmd = "grep 'x`$' f; bash -c `$'git\tadd -A'" }
+        @{ cmd = "bash -c `$'echo \'x\'; git add .\n'" }, @{ cmd = "bash -c `$'echo \'x\'; git\tadd -A'" }
+        @{ cmd = "x=`$'git add .\n'; bash -c `"`$x`"" }
     ) { (Invoke-Hook -Data (Bash $cmd 'git-ops')).Reason | Should -Match 'git add -A' }
     It 'lit \n, \r et \t comme un nom de dossier, hors de $''…'' (<cmd>)' -ForEach @(
         @{ cmd = 'git add .\t' }, @{ cmd = 'git add .\n' }, @{ cmd = 'git add .\r .\t' }, @{ cmd = "git add .\t; x=`$'y'" }
+        @{ cmd = "grep 'x`$' a.md; git add .\tests\a.ps1; echo 'y'" }, @{ cmd = "grep 'x`$' a.md; git add .\readme.md; echo 'y'" }
+        @{ cmd = "`"`$x`" -match 'a`$'; git add .\tools\b.ps1; git commit -m 'x (#1)'" }
     ) { (Invoke-Hook -Data (Bash $cmd 'git-ops')).Decision | Should -Be 'allow' }
     It 'ne coupe pas un chemin quand la commande contient $''…'' ou un ''x$'' (<cmd>)' -ForEach @(
         @{ cmd = "git -C C:\repo\app push --force origin x; if (`"`$tag`" -match '^v\d+`$') { echo ok }"; reason = 'push forc' }
@@ -432,6 +437,9 @@ Describe 'git-guard : le texte d''un message n''est pas une option' {
         @{ label = 'Add-Content'; cmd = "Add-Content c.md -Value 'Never git add -A'" }
         @{ label = 'Out-File -Append'; cmd = "Out-File -FilePath c.md -InputObject 'Never git add -A' -Append" }
         @{ label = 'here-string et -Encoding'; cmd = "@'`nNever git add -A`n'@ | Set-Content c.md -Encoding utf8" }
+        @{ label = 'Set-Content -ErrorAction'; cmd = "Set-Content -Path c.md -Value 'Never git add -A' -ErrorAction Stop" }
+        @{ label = 'Set-Content -EA'; cmd = "Set-Content -Path c.md -Value 'Never git add -A' -EA Stop" }
+        @{ label = 'Set-Content -ErrorAction:'; cmd = "Set-Content c.md -ErrorAction:Stop -Value 'Never git add -A'" }
     ) { (Invoke-Hook -Data (Bash $cmd 'git-ops')).Decision | Should -Be 'allow' }
     It 'ne prend pas pour du texte ce qu''un programme peut exécuter (<label>)' -ForEach @(
         @{ label = 'merge-pr cité par echo'; cmd = "echo merge-pr.ps1 -Subject '; git push --force origin x' | bash" }
@@ -481,6 +489,13 @@ Describe 'git-guard : le texte d''un message n''est pas une option' {
         @{ label = '-Filter pris pour le fichier'; cmd = "Set-Content -Filter x.md c.ps1 -Value 'git push --force origin x'" }
         @{ label = '-Path: et -Exclude'; cmd = "Set-Content -Path:c.ps1 -Exclude a.md -Value 'git push --force origin x'" }
         @{ label = 'pwsh /c'; cmd = "pwsh /c merge-pr.ps1 -Subject 'x; git push --force origin x' -File merge-pr.ps1" }
+        @{ label = 'pwsh --command'; cmd = "pwsh --command merge-pr.ps1 -Subject 'x; git push --force origin x' -File merge-pr.ps1" }
+        @{ label = 'pwsh --c'; cmd = "pwsh --c merge-pr.ps1 -Subject 'x; git push --force origin x' -File merge-pr.ps1" }
+        @{ label = 'variable, *>&1, tube'; cmd = "(`$body = 'git push --force origin x') *>&1 | iex" }
+        @{ label = 'variable, *> fichier, tube'; cmd = "(`$body = 'git push --force origin x') *> y.txt | iex" }
+        @{ label = '-ErrorAction et -Exclude'; cmd = "Set-Content -ErrorAction Stop -Exclude x.md c.ps1 -Value 'git push --force origin x'" }
+        @{ label = '-EA et autre fichier'; cmd = "Set-Content -EA Stop c.ps1 -Value 'git push --force origin x'" }
+        @{ label = '-ErrorAction et -PassThru'; cmd = "Set-Content c.md -Value 'git push --force origin x' -ErrorAction Stop -PassThru | iex" }
     ) { (Invoke-Hook -Data (Bash $cmd 'git-ops')).Reason | Should -Match 'push forc' }
     It 'dit sans se tromper quand un interdit est cité (<label>)' -ForEach @(
         @{ label = 'here-string en entrée'; cmd = 'git add -A <<<x'; cited = $false }
@@ -513,6 +528,8 @@ Describe 'git-guard : le texte d''un message n''est pas une option' {
         @{ label = '-F - dans un groupe, tube ensuite'; cmd = "(gh pr comment 3 -F - <<'EOF'`nNever git add -A`nEOF`n) | tail -1" }
         @{ label = 'Set-Content, -Path: collé'; cmd = "Set-Content -Path:c.md -Value 'Never git add -A'" }
         @{ label = 'Out-File, autre option'; cmd = "Out-File -Width 80 c.md -InputObject 'Never git add -A'" }
+        @{ label = 'Set-Content -WhatIf'; cmd = "Set-Content -Path c.md -Value 'Never git add -A' -WhatIf" }
+        @{ label = '-F - et tube'; cmd = "git commit -F - <<'EOF' 2>&1 | tail -5`nNever git add -A (#1)`nEOF" }
     ) { (Invoke-Hook -Data (Bash $cmd 'git-ops')).Reason | Should -Match 'lu comme une commande' }
     It 'n''explique rien de plus quand l''interdit est bien une option' {
         (Invoke-Hook -Data (Bash 'git commit -a -m "feat: x (#1)"' 'git-ops')).Reason | Should -Not -Match 'lu comme une commande'
