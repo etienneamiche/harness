@@ -35,22 +35,25 @@
 
         # 1. Interdits pour tout le monde. Ils portent sur les options de la commande, pas sur le texte
         # qu'elle transporte : un message de commit qui parle de `-Days` ou de `--no-verify` n'est pas une option.
-        # Texte que bash ET pwsh traitent à coup sûr comme littéral : on peut le retirer de l'analyse.
-        # Ce qui est retiré, en lisant la commande de gauche à droite :
-        #  - une chaîne '…' fermée sur la même ligne ;
-        #  - une chaîne "…" fermée sur la même ligne, sans $ ni `, et dont chaque \ précède un caractère de
-        #    chemin (C:\repo\app) : ni substitution ni échappement, pour bash comme pour pwsh ;
-        #  - le corps d'un heredoc à délimiteur cité (<<'EOF', <<"EOF" : bash n'y substitue rien) ;
-        #  - le corps d'une here-string @'…'@ sans apostrophe.
+        # Seul un texte qu'une commande connue transporte est retiré de l'analyse. Une autre chaîne peut être
+        # exécutée (bash -c, iex, trap, awk…) : elle reste visible, et ses guillemets se lisent comme des espaces.
+        # Ce qui est retiré, en lisant la commande de gauche à droite, si bash ET pwsh le traitent à coup sûr
+        # comme littéral :
+        #  - la valeur d'une option de texte, dans une commande git, gh ou merge-pr.ps1 ($textValue), ou
+        #    l'affectation d'une variable nommée comme un texte ($body = …) ;
+        #  - sous cette condition, une chaîne '…' fermée sur la même ligne ;
+        #  - sous cette condition, une chaîne "…" fermée sur la même ligne, sans $ ni `, et dont chaque \
+        #    précède un caractère de chemin (C:\repo\app) : ni substitution ni échappement ;
+        #  - sous cette condition, le corps d'une here-string @'…'@ sans apostrophe, ou un "$(cat <<'EOF' … EOF)" ;
+        #  - le corps d'un heredoc à délimiteur cité (<<'EOF', <<"EOF" : bash n'y substitue rien), s'il part
+        #    vers le texte de git ou de gh (-F -) ou dans un fichier .md ou .txt ($textHeredoc).
         # Au premier passage ambigu (guillemet non fermé ou non littéral, heredoc non cité, here-string
         # refusée, commentaire, échappement autre qu'un caractère de chemin, backtick, --%, guillemet
         # typographique), tout le reste de la commande est recopié tel quel : les deux shells pourraient
-        # ne plus découper pareil, et une commande masquée à tort serait un contournement. Dans le doute,
-        # le texte reste visible (au pire, un refus de trop). Une option seule entre guillemets
-        # ("--no-verify", '-a', ".", '--force-with-lease=x') reste une option, sauf comme valeur de -m / --message.
+        # ne plus découper pareil. Dans le doute, le texte reste visible (au pire, un refus de trop).
         # --% (pwsh) passe la suite telle quelle à git : il est remplacé par une espace, et la suite reste visible.
-        # Le nom d'un programme qui exécute du texte reste lui aussi visible, seul entre guillemets ("C:\…\bash.exe").
-        $runners = 'bash|sh|zsh|dash|ksh|ash|fish|csh|tcsh|pwsh|powershell|cmd|comspec|wsl|ssh|watch|python\d*|py|node|perl|ruby|php|iex|invoke-expression|invoke-command|invokescript|scriptblock|eval|source'
+        $textValue = '(?:^|[;&|(\n])\s*(?:git\b[^;&|(\n]*\s(?:-m|--message)|gh\b[^;&|(\n]*\s(?:-b|--body|-t|--title|-n|--notes|--subject)|[^;&|(\n]*\bmerge-pr\.ps1\b[^;&|(\n]*\s(?i:-Subject)|(?i:\$\w*(?:body|comment|message|msg|notes|subject|title)\w*\s*))(?:\s+|=\s*)$'
+        $textHeredoc = '^\s*(?:(?:cat\s*\|\s*)?(?:git\b[^|]*\s(?:-F|--file)|gh\b[^|]*\s(?:-F|--body-file|--notes-file))(?:\s+|=)-(?:\s|$)|cat\s*>\s*\S+\.(?:md|txt)\s*$)'
         function Get-BareCommand([string] $s) {
             $out = [Text.StringBuilder]::new()
             $smart = '[\u2018-\u201F]'
@@ -85,23 +88,32 @@
                 elseif ($c -eq '<' -and $s.Substring($i).StartsWith('<<<')) { [void] $out.Append('<<<'); $i += 3; continue }
                 elseif ($c -eq '<' -and $s.Substring($i).StartsWith('<<')) {
                     if ($s.Substring($i) -match '^<<-?[ \t]*([''"])(\w+)\1(?=[\s;|&)<>]|$)') {
-                        $heredocs.Enqueue($Matches[2]); [void] $out.Append($Matches[0]); $i += $Matches[0].Length; continue
+                        $tag = $Matches[0]; $delim = $Matches[2]
+                        # La commande du heredoc, sans le heredoc : ce qu'il y a autour de lui, entre deux séparateurs.
+                        $start = $s.LastIndexOfAny([char[]] ";&`n", [Math]::Max($i - 1, 0)) + 1
+                        $stop = $s.IndexOfAny([char[]] ";&`n", $i + $tag.Length); if ($stop -lt 0) { $stop = $n }
+                        $around = $s.Substring($start, $i - $start) + $s.Substring($i + $tag.Length, $stop - $i - $tag.Length)
+                        if ($around -cmatch $textHeredoc) { $heredocs.Enqueue($delim) }
+                        [void] $out.Append($tag); $i += $tag.Length; continue
                     }
                     $rest = $true
                 }
                 elseif ($c -eq '@' -and $i + 2 -lt $n -and ($s[$i + 1] -eq "'" -or $s[$i + 1] -eq '"') -and $s[$i + 2] -match '[\r\n]') {
                     $close = $s.IndexOf("`n'@", $i + 2)
                     $body = if ($s[$i + 1] -eq "'" -and $close -ge 0) { $s.Substring($i + 2, $close - $i - 2) } else { $null }
-                    if ($null -ne $body -and $body -notmatch "'" -and $body -notmatch $smart) { [void] $out.Append("''"); $i = $close + 3; continue }
+                    if ($null -ne $body -and $body -notmatch "'" -and $body -notmatch $smart -and $out.ToString() -cmatch $textValue) { [void] $out.Append("''"); $i = $close + 3; continue }
                     $rest = $true
+                }
+                elseif ($c -eq '"' -and $out.ToString() -cmatch $textValue -and $s.Substring($i) -match '\A"\$\(cat <<''(\w+)''\r?\n(?:(?!\1\r?\n)[^\n]*\n)*\1\r?\n\)"') {
+                    # "$(cat <<'EOF' … EOF)" : rien d'autre que le heredoc cité dans la substitution, fermé à sa première ligne de fin.
+                    [void] $out.Append("''"); $i += $Matches[0].Length; continue
                 }
                 elseif ($c -eq "'" -or $c -eq '"') {
                     $close = $s.IndexOf($c, $i + 1)
                     $content = if ($close -gt $i -and $close -lt $eol) { $s.Substring($i + 1, $close - $i - 1) } else { $null }
                     $literal = $null -ne $content -and $content -notmatch $smart -and ($c -eq "'" -or ($content -notmatch '[$`]' -and $content -notmatch '\\(?![\w./:-])'))
                     if ($literal) {
-                        $isMessage = $out.ToString() -match '(^|\s)(-m|--message)(\s+|=)$'
-                        if ($content -match ('^(-{1,2}[\w-]+(=\S*)?|\.|\+\S+|(.*[\\/])?(' + $runners + ')(\.exe)?)$') -and -not $isMessage) { [void] $out.Append($content) } else { [void] $out.Append("''") }
+                        if ($out.ToString() -cmatch $textValue) { [void] $out.Append("''") } else { [void] $out.Append($s, $i, $close + 1 - $i) }
                         $i = $close + 1; continue
                     }
                     $rest = $true
@@ -111,22 +123,25 @@
             }
             $out.ToString()
         }
-        $bare = & $normalize (Get-BareCommand $raw)
-        # Une chaîne confiée à un shell n'est plus du texte : c'est une commande. Dès qu'un programme qui exécute
-        # du texte figure hors des chaînes (ou un `-c '…'` derrière un programme inconnu, ou le `.` de bash), rien
-        # n'est masqué, et les guillemets deviennent des espaces pour que `bash -c 'git add -A'` se lise comme
-        # `git add -A`. Au pire un refus de trop : `bash x.sh && git commit -m "parle de --no-verify"`.
-        if ($bare -match ('(?<![\w.$-])(' + $runners + ')(\.exe)?(?![\w-])|(?-i:\s-[a-z]*c)\s+[''"]|(^|[;&|(\n])\s*\.\s')) { $bare = $cmd -replace '[''"`]', ' ' }
+        # Les guillemets se lisent comme des espaces après la normalisation : `bash -c 'git add -A'` se lit comme
+        # `git add -A`, et `git -C "a b" commit -a` garde son dossier d'un seul tenant le temps de le retirer.
+        $bare = (& $normalize (Get-BareCommand $raw)) -replace '[''"`]', ' '
         $forbidden = [ordered]@{
             'git\s+worktree\b'                                   = 'les worktrees sont interdits : on travaille par branches simples.'
             'git\s+rebase\b[^;&|]*\s(-i|--interactive)\b'        = 'le rebase interactif est interdit.'
             'git\s+push\b[^;&|]*(\s--force(-with-lease)?\b|\s-f\b|\s\+\S)' = 'le push forcé est interdit.'
             '--no-verify\b'                                      = 'contourner les hooks Git (--no-verify) est interdit.'
-            'git\s+add\b[^;&|]*\s(-A|--all|\.)(?=\s|$|;|&|\||\))' = "git add -A / git add . sont interdits : ajouter les fichiers un par un, après les avoir vérifiés."
+            'git\s+add\b[^;&|]*\s(-A|--all|\.)(?=\s|$|;|&|\||\)|>|\\)' = "git add -A / git add . sont interdits : ajouter les fichiers un par un, après les avoir vérifiés."
             'git\s+commit\b[^;&|]*\s(-(?!-)[a-zA-Z]*a|--all\b)' = "git commit -a est interdit : ajouter les fichiers un par un."
         }
         foreach ($pattern in $forbidden.Keys) {
-            if ($bare -cmatch $pattern) { return @{ Decision = 'deny'; Reason = $forbidden[$pattern] } }
+            if ($bare -cmatch $pattern) {
+                # Interdit vu seulement dans un texte cité : le dire, sinon le motif accuse d'une option absente.
+                $outside = $cmd -replace '''[^''\n]*''|"[^"\n]*"', ''
+                $cited = $outside -cnotmatch $pattern -or $raw -match '<<|@'''
+                $hint = if ($cited) { " Ce texte cité a été lu comme une commande : s'il ne s'exécute pas, le passer par une option de texte (-m, --body, --title, -Subject) ou un fichier, et chercher avec l'outil Grep." } else { '' }
+                return @{ Decision = 'deny'; Reason = $forbidden[$pattern] + $hint }
+            }
         }
 
         # 2. Opérations réservées : classe d'opération → agents autorisés.

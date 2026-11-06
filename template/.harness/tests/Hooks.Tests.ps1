@@ -217,13 +217,13 @@ Describe 'git-guard : le texte d''un message n''est pas une option' {
     ) { (Invoke-Hook -Data (Bash $cmd 'dev')).Decision | Should -Be 'deny' }
     # git-ops a droit à commit et push : seule la règle des interdits peut refuser, d'où le contrôle du motif.
     It 'voit un interdit confié à un autre programme (<label>)' -ForEach @(
-        @{ label = 'bash -c, push'; cmd = 'bash -c "git push --force origin x"'; reason = 'push forcé' }
+        @{ label = 'bash -c, push'; cmd = 'bash -c "git push --force origin x"'; reason = 'push forc' }
         @{ label = 'bash -c, commit'; cmd = 'bash -c "git commit --no-verify -m x"'; reason = 'no-verify' }
         @{ label = 'bash -c, add'; cmd = "bash -c 'git add -A'"; reason = 'git add -A' }
         @{ label = 'sh -c'; cmd = "sh -c 'git worktree add ../y'"; reason = 'worktrees' }
-        @{ label = 'pwsh -Command'; cmd = 'pwsh -NoProfile -Command "git push --force origin x"'; reason = 'push forcé' }
+        @{ label = 'pwsh -Command'; cmd = 'pwsh -NoProfile -Command "git push --force origin x"'; reason = 'push forc' }
         @{ label = 'tube vers bash'; cmd = "echo 'git add -A' | bash"; reason = 'git add -A' }
-        @{ label = 'iex'; cmd = "iex 'git push --force origin x'"; reason = 'push forcé' }
+        @{ label = 'iex'; cmd = "iex 'git push --force origin x'"; reason = 'push forc' }
         @{ label = 'tube vers iex'; cmd = "'git add .' | iex"; reason = 'git add -A' }
         @{ label = 'Invoke-Expression'; cmd = "Invoke-Expression 'git commit -a -m x'"; reason = 'commit -a' }
         @{ label = 'eval'; cmd = "eval 'git rebase -i HEAD~2'"; reason = 'rebase' }
@@ -240,27 +240,74 @@ Describe 'git-guard : le texte d''un message n''est pas une option' {
         @{ label = 'source'; cmd = "source <(echo 'git add -A')"; reason = 'git add -A' }
         @{ label = 'point'; cmd = ". <(echo 'git add -A')"; reason = 'git add -A' }
         @{ label = 'python -c'; cmd = "python -c `"import os; os.system('git add -A')`""; reason = 'git add -A' }
-        @{ label = 'ssh'; cmd = "ssh hote 'git push --force origin x'"; reason = 'push forcé' }
+        @{ label = 'ssh'; cmd = "ssh hote 'git push --force origin x'"; reason = 'push forc' }
         @{ label = 'watch'; cmd = "watch 'git add -A'"; reason = 'git add -A' }
         @{ label = 'sous-shell'; cmd = '(git add -A)'; reason = 'git add -A' }
         @{ label = 'substitution'; cmd = 'echo $(git add .)'; reason = 'git add -A' }
+        @{ label = 'shell par défaut, here-string'; cmd = "`$SHELL <<<'git push --force origin x'"; reason = 'push forc' }
+        @{ label = 'programme dans une variable, heredoc'; cmd = "`$s <<'EOF'`ngit push --force origin x`nEOF"; reason = 'push forc' }
+        @{ label = '-c collé'; cmd = "`$SHELL -c'git push --force origin x'"; reason = 'push forc' }
+        @{ label = 'variable, -Command'; cmd = "`$p -Command 'git push --force origin x'"; reason = 'push forc' }
+        @{ label = 'COMSPEC'; cmd = "`$COMSPEC /c 'git push --force origin x'"; reason = 'push forc' }
+        @{ label = 'InvokeScript'; cmd = "`$ExecutionContext.InvokeCommand.InvokeScript('git push --force origin x')"; reason = 'push forc' }
+        @{ label = 'point dans un bloc'; cmd = "{ . <(echo 'git push --force origin x'); }"; reason = 'push forc' }
+        @{ label = 'point après then'; cmd = "if true; then . <(echo 'git push --force origin x'); fi"; reason = 'push forc' }
+        @{ label = 'substitution exécutée'; cmd = "`$(printf 'git push --force origin x')"; reason = 'push forc' }
+        @{ label = 'trap'; cmd = "trap 'git push --force origin x' EXIT"; reason = 'push forc' }
+        @{ label = 'alias'; cmd = "shopt -s expand_aliases; alias y='git push --force origin x'; y"; reason = 'push forc' }
+        @{ label = 'awk'; cmd = "awk 'BEGIN{system(`"git push --force origin x`")}'"; reason = 'push forc' }
+        @{ label = 'env -S'; cmd = "env -S 'git push --force origin x'"; reason = 'push forc' }
+        @{ label = 'make'; cmd = "make -f - <<'EOF'`nall:`n`tgit push --force origin x`nEOF"; reason = 'push forc' }
+        @{ label = 'script écrit dans la même commande'; cmd = "cat > x.sh <<'EOF'`ngit push --force origin x`nEOF`n./x.sh"; reason = 'push forc' }
+        @{ label = 'option de texte hors de git et gh'; cmd = "bash -c -m 'git add -A'"; reason = 'git add -A' }
+        @{ label = 'option de texte d''un echo'; cmd = "echo x --body 'git add -A' | bash"; reason = 'git add -A' }
+        @{ label = 'suivi d''une redirection'; cmd = 'bash -c "git add -A>/dev/null"'; reason = 'git add -A' }
+        @{ label = 'suivi d''un \n'; cmd = "bash -c `$'git add -A\n'"; reason = 'git add -A' }
+        @{ label = 'commande après le heredoc d''une substitution'; cmd = "git commit -m `"`$(cat <<'EOF'`nx (#1)`nEOF`ngit add -A`nEOF`n)`""; reason = 'git add -A' }
+        @{ label = 'autre commande dans une substitution'; cmd = "git commit -m `"`$(git add -A; cat <<'EOF'`nx (#1)`nEOF`n)`""; reason = 'git add -A' }
     ) { (Invoke-Hook -Data (Bash $cmd 'git-ops')).Reason | Should -Match $reason }
-    It 'accepte un texte qui cite un interdit ou un shell, sans programme pour l''exécuter (<label>)' -ForEach @(
+    It 'accepte un texte qui cite un interdit ou un shell, dans une option de texte (<label>)' -ForEach @(
         @{ label = 'message qui cite un interdit'; cmd = 'git commit -m "docs: explain why --no-verify is banned (#1)"' }
         @{ label = 'message qui cite une commande enveloppée'; cmd = "git commit -m `"docs: bash -c 'git add -A' is refused (#1)`"" }
         @{ label = 'message réduit au nom d''un shell'; cmd = "git commit -m 'bash' -m 'feat: never git add -A (#1)'" }
         @{ label = 'heredoc qui cite une commande enveloppée'; cmd = "git commit -F - <<'EOF'`ndocs: wrapped commands (#1)`n`nbash -c `"git push --force`" is refused.`nEOF" }
+        @{ label = 'heredoc dans une substitution'; cmd = "git commit -m `"`$(cat <<'EOF'`ndocs: x (#1)`n`nRefuse ``git add -A`` under bash, and `"--no-verify`".`nEOF`n)`"" }
+        @{ label = 'corps de PR dans une substitution'; cmd = "gh pr create --title `"docs: --no-verify`" --body `"`$(cat <<'EOF'`nNever git add -A.`nEOF`n)`"" }
+        @{ label = 'heredoc par un tube vers git'; cmd ="cat <<'EOF' | git commit -F -`ndocs: x (#1)`n`nNever git add -A.`nEOF" }
+        @{ label = 'heredoc vers un fichier .md'; cmd = "cat > /tmp/audit-61.md <<'EOF'`nNever git add -A.`nEOF" }
         @{ label = 'corps de commentaire'; cmd = "gh issue comment 1 --body 'bash -c `"git add -A`" est refusé'" }
-        @{ label = 'variable qui s''appelle cmd'; cmd = "`$cmd = 'git add -A'; echo `$cmd" }
-        @{ label = 'script dont le nom finit en .sh'; cmd = "./scripts/check.sh 'git add -A'" }
+        @{ label = 'variable de texte'; cmd = "`$body = @'`nNever git add -A.`n'@`n[IO.File]::WriteAllText(`$f, `$body)" }
+        @{ label = 'message d''un tag'; cmd = "git tag -a v1.0.0 -m 'never --no-verify'" }
         @{ label = 'dossier cité par -C'; cmd = "git -C 'C:\repo\app' commit -m 'docs: --no-verify (#1)'" }
+        @{ label = 'sujet de merge-pr'; cmd = 'pwsh -NoProfile -File .harness/tools/merge-pr.ps1 -Pr 3 -Subject "docs: explain why --no-verify is banned (#1)"' }
+        @{ label = 'autre sujet de merge-pr'; cmd = 'pwsh -NoProfile -File .harness/tools/merge-pr.ps1 -Pr 3 -Subject "fix(hooks): refuse git add -A (#60)"' }
     ) { (Invoke-Hook -Data (Bash $cmd 'git-ops')).Decision | Should -Be 'allow' }
-    It 'laisse passer un shell qui ne porte aucun interdit (<label>)' -ForEach @(
+    It 'ne prend pas un mot de la commande pour un programme (<label>)' -ForEach @(
+        @{ label = 'watch.ts'; cmd = 'git add src/watch.ts && git commit -m "fix: explain why --no-verify is banned (#1)"' }
+        @{ label = 'source/'; cmd = 'git add source/app.ts && git commit -m "feat(scripts): add -Days (#5)"' }
+        @{ label = 'cmd/'; cmd = 'git add cmd/api/main.go && git commit -m "docs: explain why --no-verify is banned (#1)"' }
+        @{ label = 'eval.ts'; cmd = 'git commit -m "docs: --no-verify (#1)" -- src/eval.ts' }
+        @{ label = 'ssh://'; cmd = 'git remote add up ssh://git@host/x.git && git commit -m "docs: --no-verify (#1)"' }
+        @{ label = 'label python'; cmd = 'gh issue create --title "x" --label python --body "Never use --no-verify"' }
+        @{ label = 'gh run watch'; cmd = 'gh run watch 123 && gh issue comment 1 --body "Pas de --no-verify"' }
+        @{ label = 'chemin d''un shell dans un corps'; cmd = "gh issue comment 1 --body 'Never git add -A with /usr/bin/bash'" }
+    ) { (Invoke-Hook -Data (Bash $cmd 'git-ops')).Decision | Should -Be 'allow' }
+    It 'laisse passer un programme qui ne porte aucun interdit, ni le message qui suit (<label>)' -ForEach @(
         @{ label = 'script bash puis commit'; cmd = 'bash scripts/test.sh && git commit -m "feat: x (#1)"' }
+        @{ label = 'script bash puis message qui cite'; cmd = 'bash scripts/test.sh && git commit -m "docs: --no-verify (#1)"' }
+        @{ label = 'pytest puis message'; cmd = 'python -m pytest && git commit -m "feat(scripts): add -Days to clean-exports (#5)"' }
+        @{ label = 'script pwsh puis message'; cmd = 'pwsh -NoProfile -File scripts/test.ps1 && git commit -m "feat(scripts): add -Days to clean-exports (#5)"' }
         @{ label = 'outil du harness'; cmd = 'pwsh -NoProfile -File .harness/tools/merge-pr.ps1 -Pr 3 -Subject "fix: y (#1)"' }
     ) { (Invoke-Hook -Data (Bash $cmd 'git-ops')).Decision | Should -Be 'allow' }
-    It 'préfère un refus de trop quand un shell côtoie un message qui cite un interdit' {
-        (Invoke-Hook -Data (Bash 'bash scripts/test.sh && git commit -m "docs: --no-verify (#1)"' 'git-ops')).Reason | Should -Match 'no-verify'
+    It 'préfère un refus de trop sur un texte qu''aucune option de texte ne porte, et explique pourquoi (<label>)' -ForEach @(
+        @{ label = 'grep'; cmd = "grep -rn 'git add -A' source/" }
+        @{ label = 'grep -c'; cmd = "grep -c 'git add -A' CHANGELOG.md" }
+        @{ label = 'echo'; cmd = 'echo "git add -A est interdit"' }
+        @{ label = 'argument de script'; cmd = "./scripts/check.sh 'git add -A'" }
+        @{ label = 'variable qui ne porte pas un nom de texte'; cmd = "`$cmd = 'git add -A'; echo `$cmd" }
+    ) { (Invoke-Hook -Data (Bash $cmd 'git-ops')).Reason | Should -Match 'lu comme une commande' }
+    It 'n''explique rien de plus quand l''interdit est bien une option' {
+        (Invoke-Hook -Data (Bash 'git commit -a -m "feat: x (#1)"' 'git-ops')).Reason | Should -Not -Match 'lu comme une commande'
     }
     It 'voit la sous-commande git derrière --% de pwsh, pour les opérations réservées' {
         (Invoke-Hook -Data (Bash "git --% commit -m 'feat: x (#1)'" 'dev')).Decision | Should -Be 'deny'
