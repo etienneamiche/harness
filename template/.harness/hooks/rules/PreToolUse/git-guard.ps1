@@ -155,7 +155,8 @@
                 elseif ($c -eq '|') {
                     if ($i + 1 -lt $n -and $s[$i + 1] -eq '|') { & $between '||' $true $false; $i += 2; continue }
                     # Sans commande en cours, le tube prend la sortie de ce qui précède : un groupe (…) | x, ou la ligne d'avant (⏎| x, pwsh 7).
-                    if ($null -eq $st.Command -and $commands.Count) {
+                    # Une redirection placée entre les deux ((…) 2>&1 | x) ne change rien : elle est lue comme une commande.
+                    if (($null -eq $st.Command -or ($st.Command.Words.Count -and $st.Command.Words[0].Text -match '^\d*&?[<>]')) -and $commands.Count) {
                         $from = if ($null -ne $st.Group) { $st.Group.From } else { $commands.Count - 1 }
                         for ($k = $from; $k -lt $commands.Count; $k++) { $commands[$k].Piped = $true }
                     }
@@ -246,22 +247,23 @@
             if ($name -imatch '^(pwsh|powershell)(\.exe)?$') {
                 # pwsh -File <script> : ce qui suit n'est pas exécuté par pwsh. Pas -Command, ni une commande encodée.
                 for ($j = 0; $j -lt $after.Count - 1; $j++) {
-                    if ($after[$j] -imatch '^-(c\w*|e|ec|en\w*)$') { return $null }
+                    if ($after[$j] -imatch '^[-/](c\w*|e|ec|en\w*)$') { return $null }
                     if ($after[$j] -imatch '^-f(ile)?$') { return $(if (($after[$j + 1] -split '[\\/]')[-1] -ieq 'merge-pr.ps1') { 'merge-pr.ps1' }) }
                 }
                 return $null
             }
             if ($name -in 'Set-Content', 'Add-Content', 'Out-File') {
-                # Le fichier écrit, et lui seul : pas la valeur, ni plusieurs cibles. -PassThru rend le texte à qui le demande.
+                # Le fichier écrit, et lui seul : pas la valeur, ni plusieurs cibles. Une autre option peut prendre une
+                # valeur (-Exclude x.md) ou rendre le texte (-PassThru) : la commande n'est alors pas vue comme un texte.
                 $target = $null
                 for ($j = 0; $j -lt $after.Count; $j++) {
-                    if ($after[$j] -imatch '^-pas') { return $null }
                     if ($after[$j] -imatch '^-(path|literalpath|filepath)$') { $target = if ($j + 1 -lt $after.Count) { $after[$j + 1] }; $j++ }
                     elseif ($after[$j] -imatch '^-(value|inputobject|encoding)$') { $j++ }
                     elseif ($after[$j] -notmatch '^-') {
                         if ($after[$j] -match '^,') { return $null }
                         if ($null -eq $target) { $target = $after[$j] }
                     }
+                    elseif ($after[$j] -inotmatch '^-(value|inputobject|encoding):|^-(force|nonewline|append|noclobber)$') { return $null }
                 }
                 if ($target -imatch $textFile -and $target -notmatch ',') { return 'text-file' }
             }
@@ -314,17 +316,21 @@
         Hide-CarriedText $split.Commands
         # Les guillemets se lisent comme des espaces après la normalisation : `bash -c 'git add -A'` se lit comme
         # `git add -A`, et `git -C "a b" commit -a` garde son dossier d'un seul tenant le temps de le retirer.
-        # Dans $'…', \n, \r et \t sont des blancs. >& est une redirection : son & ne coupe pas un motif.
+        # >& et &> sont des redirections : leur & ne coupe pas un motif.
+        $unredirect = { param([string] $t) $t.Replace('>&', '> ').Replace('&>', ' >') }
         $render = {
-            param([bool] $allCited)
+            param([bool] $allCited, [bool] $ansiC)
             $text = -join @(foreach ($p in $split.Pieces) { if ($p.Hide -or ($allCited -and $null -ne $p.Mask)) { $p.Mask } else { $p.Raw } })
-            if ($text.Contains("`$'")) { $text = $text -replace '\\[nrt]', ' ' }
-            ((& $normalize $text) -replace '[''"`]', ' ').Replace('>&', '> ')
+            if ($ansiC) { $text = [regex]::Replace($text, '\$''[^'']*''', { param($m) $m.Value -replace '\\[nrt]', ' ' }) }
+            & $unredirect ((& $normalize $text) -replace '[''"`]', ' ')
         }
-        $bare = & $render $false
+        $bare = & $render $false $false
         # La même commande sans aucune chaîne : un ; & ou | cité y arrêterait les motifs, et cacherait une vraie option
         # placée après lui (git add 'R&D.md' .).
-        $noText = & $render $true
+        $noText = & $render $true $false
+        # Dans $'…', \n, \r et \t sont des blancs. Une lecture de plus, jamais à la place des autres : 'x$' peut ressembler
+        # à l'ouverture d'un $'…', et y remplacer \n couperait le chemin C:\new qui suit.
+        $ansiC = if ($raw.Contains("`$'")) { & $render $false $true } else { '' }
         $forbidden = [ordered]@{
             'git\s+worktree\b'                                   = 'les worktrees sont interdits : on travaille par branches simples.'
             'git\s+rebase\b[^;&|]*\s(-i|--interactive)\b'        = 'le rebase interactif est interdit.'
@@ -334,10 +340,12 @@
             'git\s+commit\b[^;&|]*\s(-(?!-)[a-zA-Z]*a|--all\b)' = "git commit -a est interdit : ajouter les fichiers un par un."
         }
         foreach ($pattern in $forbidden.Keys) {
-            if ($bare -cmatch $pattern -or $noText -cmatch $pattern) {
+            if ($bare -cmatch $pattern -or $noText -cmatch $pattern -or $ansiC -cmatch $pattern) {
                 # Interdit vu seulement dans un texte cité, même d'une chaîne que la règle ne sait pas analyser
-                # ("… $x …") : le dire, sinon le motif accuse d'une option absente.
-                $hint = if ($noText -cnotmatch $pattern -or (& $normalize ($raw -replace '(?s)"(?:[^"\\]|\\.)*"|''[^'']*''', ' ')) -cnotmatch $pattern) { " Ce texte cité a été lu comme une commande : s'il ne s'exécute pas, l'écrire dans un fichier (--body-file, -F) ou une variable de texte (`$body = …), et chercher dans le dépôt avec l'outil Grep, dans l'historique avec git log -S ou --grep, sur GitHub avec --search." } else { '' }
+                # ("… $x …") : le dire, sinon le motif accuse d'une option absente. La chaîne devient un mot vide le
+                # temps de normaliser : git -C "a b" add garde son dossier.
+                $withoutStrings = (& $normalize ($raw -replace '(?s)"(?:[^"\\]|\\.)*"|''[^'']*''', "''")) -replace "''", ' '
+                $hint = if ($noText -cnotmatch $pattern -or (& $unredirect $withoutStrings) -cnotmatch $pattern) { " Ce texte cité a été lu comme une commande : s'il ne s'exécute pas, l'écrire dans un fichier (--body-file, -F) ou une variable de texte (`$body = …), et chercher dans le dépôt avec l'outil Grep, dans l'historique avec git log -S ou --grep, sur GitHub avec --search." } else { '' }
                 return @{ Decision = 'deny'; Reason = $forbidden[$pattern] + $hint }
             }
         }
