@@ -672,6 +672,7 @@ Describe 'merge-pr.ps1' {
 }
 
 Describe 'destructive-guard' {
+    BeforeAll { Import-Module (Join-Path $script:Root '.harness' 'hooks' 'HarnessHooks.psm1') -Force }
     It 'refuse au premier essai puis accepte la même commande' {
         (Invoke-Hook -Data (Bash 'rm -rf build')).Decision | Should -Be 'deny'
         (Invoke-Hook -Data (Bash 'rm -rf build')).Decision | Should -Be 'allow'
@@ -683,14 +684,12 @@ Describe 'destructive-guard' {
             (Invoke-Hook -Data (Bash $c)).Decision | Should -Be 'allow'
         }
         foreach ($c in $cmds) { (Invoke-Hook -Data (Bash $c)).Decision | Should -Be 'allow' }
-        $state = Join-Path ([IO.Path]::GetTempPath()) 'claude-harness' "$script:SessionId.destructive.json"
+        $state = Get-HarnessStatePath $script:SessionId 'destructive'
         @(Get-Content $state -Raw | ConvertFrom-Json).Count | Should -Be 3
     }
     It 'n''est pas bloqué par un état écrit par l''ancienne version' {
-        # L'ancienne version collait les empreintes en une seule chaîne, qui ne correspond à aucune commande.
-        $dir = Join-Path ([IO.Path]::GetTempPath()) 'claude-harness'
-        New-Item -ItemType Directory -Force $dir | Out-Null
-        '"0123456789abcdef0123456789abcdef"' | Set-Content (Join-Path $dir "$script:SessionId.destructive.json")
+        # L'ancienne version écrivait un tableau d'un seul élément, les empreintes collées, qui ne correspond à aucune commande.
+        '["0123456789abcdef0123456789abcdef"]' | Set-Content (Get-HarnessStatePath $script:SessionId 'destructive')
         (Invoke-Hook -Data (Bash 'rm -rf build')).Decision | Should -Be 'deny'
         (Invoke-Hook -Data (Bash 'rm -rf build')).Decision | Should -Be 'allow'
         (Invoke-Hook -Data (Bash 'tofu destroy')).Decision | Should -Be 'deny'
