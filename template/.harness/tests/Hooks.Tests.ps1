@@ -676,6 +676,26 @@ Describe 'destructive-guard' {
         (Invoke-Hook -Data (Bash 'rm -rf build')).Decision | Should -Be 'deny'
         (Invoke-Hook -Data (Bash 'rm -rf build')).Decision | Should -Be 'allow'
     }
+    It 'accepte au deuxième essai chaque commande d''une même session' {
+        $cmds = 'rm -rf build', 'git reset --hard HEAD~1', 'tofu destroy'
+        foreach ($c in $cmds) {
+            (Invoke-Hook -Data (Bash $c)).Decision | Should -Be 'deny'
+            (Invoke-Hook -Data (Bash $c)).Decision | Should -Be 'allow'
+        }
+        foreach ($c in $cmds) { (Invoke-Hook -Data (Bash $c)).Decision | Should -Be 'allow' }
+        $state = Join-Path ([IO.Path]::GetTempPath()) 'claude-harness' "$script:SessionId.destructive.json"
+        @(Get-Content $state -Raw | ConvertFrom-Json).Count | Should -Be 3
+    }
+    It 'n''est pas bloqué par un état écrit par l''ancienne version' {
+        # L'ancienne version collait les empreintes en une seule chaîne, qui ne correspond à aucune commande.
+        $dir = Join-Path ([IO.Path]::GetTempPath()) 'claude-harness'
+        New-Item -ItemType Directory -Force $dir | Out-Null
+        '"0123456789abcdef0123456789abcdef"' | Set-Content (Join-Path $dir "$script:SessionId.destructive.json")
+        (Invoke-Hook -Data (Bash 'rm -rf build')).Decision | Should -Be 'deny'
+        (Invoke-Hook -Data (Bash 'rm -rf build')).Decision | Should -Be 'allow'
+        (Invoke-Hook -Data (Bash 'tofu destroy')).Decision | Should -Be 'deny'
+        (Invoke-Hook -Data (Bash 'tofu destroy')).Decision | Should -Be 'allow'
+    }
     It 'reconnaît <cmd>' -ForEach @(
         @{ cmd = 'Remove-Item ./dist -Recurse -Force' }, @{ cmd = 'git reset --hard HEAD~1' },
         @{ cmd = 'kubectl delete ns demo' }, @{ cmd = 'tofu destroy' }, @{ cmd = 'psql -c "DROP TABLE users"' }
