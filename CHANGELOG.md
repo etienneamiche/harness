@@ -4,6 +4,10 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versions : [s
 
 ## [Non publié]
 
+## [0.3.0] - 2026-11-11
+
+Les skills du workflow (phase 4 de la roadmap).
+
 ### Ajouté
 - **Skill `/audit-pr`** : la revue complète d'une PR avant sa fusion, confiée à `auditor`, qui publie son verdict en commentaire. Le skill distingue le premier passage de la revue après corrections, prépare la copie locale, et propose un mode essai qui ne publie rien. Son guide (`references/review-guide.md`) fixe la méthode, la gravité, le format du commentaire et la publication du marqueur.
 - **Skill `/ship`** : envoie le travail terminé d'une branche en revue. La session principale contrôle les fichiers (secrets et fichiers de travail écartés), les tests et le lint, puis rédige le commit et la PR (modèle de PR, critères de l'issue) ; `git-ops` commite, pousse, ouvre ou met à jour la PR et passe la carte en « En revue ». Le skill refuse de commiter sur `main` ou `develop`, signale qu'un nouveau commit annule une approbation `auditor`, et propose un mode essai qui ne publie rien.
