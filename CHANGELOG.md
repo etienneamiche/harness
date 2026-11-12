@@ -4,6 +4,10 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versions : [s
 
 ## [Non publié]
 
+### Modifié
+- **ponytail** : `settings.json` impose le mode `full` (`PONYTAIL_DEFAULT_MODE`), qu'une config personnelle ne coupe plus. Ses règles ne vont qu'aux subagents qui écrivent ou jugent du code : `dev`, `reviewer`, `auditor`, `architect` et `db-ops` (`PONYTAIL_SUBAGENT_MATCHER`). `git-ops`, `explorer`, `cartographer` et `linter` ne les reçoivent plus.
+- **Revues** : `reviewer`, `/review` et le guide d'`auditor` signalent la sur-ingénierie. Pour `auditor`, c'est un constat mineur, ou important pour une dépendance ajoutée sans besoin ou une couche que les conventions n'appellent pas.
+
 ## [0.3.0] - 2026-11-11
 
 Les skills du workflow (phase 4 de la roadmap).
