@@ -25,6 +25,12 @@ Les skills du workflow (phase 4 de la roadmap).
 - **`.harness/tools/board.ps1`**, réservé à `git-ops` : place la carte d'une issue dans une colonne du Project « services », et l'y ajoute si besoin. Les écritures `gh project` sont réservées à `git-ops` elles aussi.
 - **Modèles d'issue et de PR** (`.github/`) : `feature` et `bug`, avec leurs critères d'acceptation, et un modèle de PR que remplit `/ship`.
 
+### Modifié
+- Convention de branches : `chore/harness-vX.Y.Z` pour une mise à jour du harness.
+- Sans gitflow, une release se fusionne en squash, comme une feature, et sa branche est supprimée à la fusion : `-Strategy merge` est réservé au gitflow (`release/*`, `hotfix/*` et report de `main` dans `develop`). Conventions, `git-ops` et `/release`.
+- La taille cible d'une PR passe de 400 à 1 500 lignes modifiées, hors fichiers générés et lockfiles : conventions, `/feature`, `/ship`, guide de `/audit-pr` et modèle d'issue `feature`.
+- `auditor` renvoie au guide de `/audit-pr` pour la méthode et le format, et ne garde que les règles non négociables.
+
 ### Corrigé
 - **`doctor -Fix` ne réécrit plus le manifeste** en réparant `.gitignore` : `post-install.ps1` prend `-SkipManifest`, que le doctor lui passe. Un fichier du harness modifié restait sinon invisible au doctor suivant. Un autotest le vérifie.
 - **`doctor -Fix` respecte `HARNESS_SKIP_PLUGINS`** : il installait quand même les plugins manquants, et `claude plugin install` réécrit `.claude/settings.json` (harness#4), que le doctor voyait ensuite comme un fichier du harness modifié.
@@ -32,13 +38,8 @@ Les skills du workflow (phase 4 de la roadmap).
 - `git-guard` ne prend plus `git merge-base` ni `git merge-tree`, des lectures, pour une fusion réservée à `git-ops`.
 - `git-guard` voit les interdits confiés à un autre programme (`bash -c '…'`, `pwsh -Command`, `iex`, `trap`, `awk`, un tube ou un heredoc vers un shell). La commande est découpée hors des chaînes, et seul le texte d'un programme identifié échappe à l'analyse : les options de texte de `git`, de `gh` et de `merge-pr.ps1`, selon la sous-commande, recherches comprises (`git log -S`, `--grep`, `gh issue list --search`), une variable de texte seule dans sa commande (`$body = …`, `msg='…'`), et ce qui part vers `-F -` ou dans un fichier `.md` ou `.txt`. Ailleurs, une chaîne qui cite un interdit est refusée, avec un motif qui dit où écrire ou chercher ce texte : `grep 'git add -A' fichier` passe par l'outil Grep. Encore possible : `$body = '…'; iex $body`, un fichier `.md` écrit puis exécuté, et la sortie d'une commande envoyée à un shell (`git commit -m '…' | bash`). `(git add -A)`, `$(git add .)`, `git add -A>x`, `& { git add -A}` et `git add ./` sont refusés, comme `git add -A`.
 - `destructive-guard` retient chaque commande destructive confirmée dans une session, et plus seulement la première : les suivantes étaient refusées à chaque essai. Un état écrit par l'ancienne version ne bloque pas ; une commande déjà confirmée est refusée une fois de plus.
-- `Get-Help` affiche enfin l'aide des outils du harness (`doctor`, `post-install`, `board`, `merge-pr`, `write-manifest`, `tools/test.ps1`) : leur bloc d'aide, collé à la ligne `#Requires`, n'était pas reconnu. `write-manifest.ps1` reçoit une aide, et un autotest vérifie celle de chaque outil.
+- `Get-Help` affiche enfin l'aide des outils du harness (`doctor`, `post-install`, `board`, `merge-pr`, `write-manifest`, `tools/test.ps1`) : leur bloc d'aide, collé à la ligne `#Requires`, n'était pas reconnu. `write-manifest.ps1` reçoit une aide, et un autotest vérifie celle de chaque outil de `.harness/tools/`.
 - `/audit-pr` et le refus de `gh pr merge` par `git-guard` réservent `-Strategy merge` au gitflow : sans `develop`, ils proposaient de fusionner une release en merge, alors qu'elle se fusionne en squash.
-
-### Modifié
-- Convention de branches : `chore/harness-vX.Y.Z` pour une mise à jour du harness.
-- La taille cible d'une PR passe de 400 à 1 500 lignes modifiées, hors fichiers générés et lockfiles : conventions, `/feature`, `/ship`, guide de `/audit-pr` et modèle d'issue `feature`.
-- `auditor` renvoie au guide de `/audit-pr` pour la méthode et le format, et ne garde que les règles non négociables.
 
 ## [0.2.0] - 2026-10-14
 
