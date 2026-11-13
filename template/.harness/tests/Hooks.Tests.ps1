@@ -913,7 +913,7 @@ Describe 'outils du harness : aide lisible par Get-Help' {
 }
 
 Describe 'modules installés' {
-    It 'les conventions du module <name> sont importées par core.md' -ForEach @(Get-ChildItem (Join-Path $PSScriptRoot '..' 'modules') -Directory -ErrorAction SilentlyContinue | ForEach-Object { @{ name = $_.Name } }) {
+    It 'les conventions du module <name> sont importées par core.md' -AllowNullOrEmptyForEach -ForEach @(Get-ChildItem (Join-Path $PSScriptRoot '..' 'modules') -Directory -ErrorAction SilentlyContinue | ForEach-Object { @{ name = $_.Name } }) {
         Get-Content (Join-Path $PSScriptRoot '..' 'agents' 'core.md') -Raw | Should -Match ([regex]::Escape("@../modules/$name/conventions.md"))
     }
 }
