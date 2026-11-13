@@ -22,6 +22,7 @@ Questions posées : nom, description, **type de dépôt** (`app`, `game`, `sandb
 | `dotnet` | Un backend .NET | Conventions .NET, `analyzers.globalconfig`, vérifications `dotnet format` + build + numéros de migration, subagent `db-ops`, skills `dotnet-webapi` et `optimizing-ef-core-queries`, plugin `csharp-lsp` |
 | `python` | Un petit module Python | Conventions Python, vérifications ruff + pyright, plugin `pyright-lsp` |
 | `game` | Un jeu multijoueur (avec `react` et `dotnet`) | Conventions jeu : serveur qui fait autorité, règles pures, salles, sauvegardes |
+| `infra` | Le dépôt d'infrastructure (type `infra`) | Conventions OpenTofu, Ansible (dans WSL), Kubernetes en GitOps et SOPS + age, accord de l'utilisateur avant toute action sur l'infra, notes `hosts/<hôte>/*.md` acceptées par `doc-sprawl` |
 
 Un module vit dans `template/.harness/modules/{% if '<nom>' in modules %}<nom>{% endif %}/` (le nom conditionnel fait qu'il n'est créé que si le module est choisi) : `conventions.md` (importé par `core.md`), `module.json` (vérifications de fin de tour `stopChecks`, blocs structurels `structural`), et ses fichiers de configuration.
 
@@ -30,7 +31,7 @@ Un module vit dans `template/.harness/modules/{% if '<nom>' in modules %}<nom>{%
 - déclarer son plugin LSP dans `template/.claude/settings.json.jinja`, s'il en a un ;
 - l'ajouter à un scénario de `tools/test.ps1`.
 
-Combinaisons refusées par Copier : `game` sans `dotnet` et `react` ; `python` avec `dotnet` (un dépôt n'a qu'un seul backend).
+Combinaisons refusées par Copier : `game` sans `dotnet` et `react` ; `python` avec `dotnet` (un dépôt n'a qu'un seul backend) ; `infra` hors du type `infra`.
 
 ## Mettre à jour un projet
 

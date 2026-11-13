@@ -1,0 +1,6 @@
+{
+  "name": "infra",
+  "description": "Infrastructure : OpenTofu, Ansible, manifestes Kubernetes en GitOps, secrets SOPS + age",
+  "stopChecks": [],
+  "structural": []
+}

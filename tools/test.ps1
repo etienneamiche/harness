@@ -14,15 +14,17 @@
       sandbox : kind=sandbox, modules react + dotnet + game ;
       python  : kind=app, modules react + python ;
       root    : kind=root, aucun module ;
-      invalid : combinaison refusée (game sans dotnet) : Copier doit échouer.
+      infra   : kind=infra, module infra ;
+      invalid, invalid2, invalid3 : combinaisons refusées (game sans dotnet,
+      python avec dotnet, infra hors du type infra) : Copier doit échouer.
 
 .PARAMETER Keep
     Conserve les projets générés pour les inspecter.
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('sandbox', 'python', 'root', 'invalid', 'invalid2')]
-    [string[]] $Scenario = @('sandbox', 'python', 'root', 'invalid', 'invalid2'),
+    [ValidateSet('sandbox', 'python', 'root', 'infra', 'invalid', 'invalid2', 'invalid3')]
+    [string[]] $Scenario = @('sandbox', 'python', 'root', 'infra', 'invalid', 'invalid2', 'invalid3'),
     [switch] $Keep
 )
 
@@ -40,8 +42,10 @@ $scenarios = @{
     sandbox = @{ Kind = 'sandbox'; Modules = '["react", "dotnet", "game"]' }
     python  = @{ Kind = 'app';     Modules = '["react", "python"]' }
     root    = @{ Kind = 'root';    Modules = '[]' }
+    infra   = @{ Kind = 'infra';   Modules = '["infra"]' }
     invalid = @{ Kind = 'app';     Modules = '["react", "game"]'; MustFail = 'game s''utilise avec dotnet et react' }
     invalid2 = @{ Kind = 'app';    Modules = '["react", "dotnet", "python"]'; MustFail = 'un seul backend' }
+    invalid3 = @{ Kind = 'app';    Modules = '["infra"]'; MustFail = 'réservé au dépôt d''infrastructure' }
 }
 
 foreach ($name in $Scenario) {
