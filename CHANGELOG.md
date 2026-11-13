@@ -4,6 +4,9 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versions : [s
 
 ## [Non publié]
 
+### Ajouté
+- **Module `infra`**, réservé au type `infra` (refusé ailleurs par Copier). Ses conventions couvrent le rangement du dépôt, l'accord explicite de l'utilisateur avant toute action qui modifie l'infra, le contexte de cluster toujours nommé, le plan OpenTofu enregistré avant l'apply, les versions figées, Ansible dans WSL Ubuntu, les manifestes en GitOps et les secrets SOPS + age. Avec ce module, `doc-sprawl` accepte les notes d'une machine, `hosts/<hôte>/<fichier>.md` (#5). Un autotest vérifie que les conventions de chaque module installé sont importées par `core.md`. `tools/test.ps1` génère un projet `infra` et refuse `infra` dans une app.
+
 ### Modifié
 - **ponytail** : `settings.json` impose le mode `full` (`PONYTAIL_DEFAULT_MODE`), qu'une config personnelle ne coupe plus. Ses règles ne vont qu'aux subagents qui conçoivent, écrivent ou relisent du code : `dev`, `reviewer`, `auditor`, `architect` et `db-ops` (`PONYTAIL_SUBAGENT_MATCHER`). `git-ops`, `explorer` et `cartographer` ne les reçoivent plus, ni `linter`, dont les corrections sont mécaniques.
 - **Revues** : `reviewer`, `/review` et le guide d'`auditor` signalent la sur-ingénierie. Pour `auditor`, c'est un constat mineur, ou important pour une dépendance ajoutée sans besoin ou une couche que les conventions n'appellent pas.

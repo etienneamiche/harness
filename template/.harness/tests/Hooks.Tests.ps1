@@ -11,6 +11,7 @@ BeforeDiscovery {
     $IsRoot = $cfg.kind -eq 'root'
     $HasReact = Test-Path (Join-Path $PSScriptRoot '..' 'modules' 'react')
     $HasDotnet = Test-Path (Join-Path $PSScriptRoot '..' 'modules' 'dotnet')
+    $HasInfra = Test-Path (Join-Path $PSScriptRoot '..' 'modules' 'infra')
     $Tools = @(Get-ChildItem (Join-Path $PSScriptRoot '..' 'tools') -File -Filter '*.ps1' | ForEach-Object { @{ name = $_.Name; path = $_.FullName } })
 }
 
@@ -758,6 +759,15 @@ Describe 'règles d''information' {
     It 'doc-sprawl signale toujours un autre Markdown de project-ideas' -Skip:(-not $IsRoot) {
         (Invoke-Hook -EventName 'PostToolUse' -Data (Tool 'Write' @{ file_path = (Join-Path $script:Root 'project-ideas/notes.md'); content = 'x' })).Decision | Should -Be 'context'
     }
+    It 'doc-sprawl ignore les notes d''un hôte avec le module infra' -Skip:(-not $HasInfra) {
+        (Invoke-Hook -EventName 'PostToolUse' -Data (Tool 'Write' @{ file_path = (Join-Path $script:Root 'hosts/node-01/install-notes.md'); content = 'x' })).Decision | Should -Be 'allow'
+    }
+    It 'doc-sprawl signale un Markdown plus profond sous hosts/ (<path>)' -ForEach @(@{ path = 'hosts/node-01/sub/notes.md' }, @{ path = 'hosts/notes.md' }) {
+        (Invoke-Hook -EventName 'PostToolUse' -Data (Tool 'Write' @{ file_path = (Join-Path $script:Root $path); content = 'x' })).Decision | Should -Be 'context'
+    }
+    It 'doc-sprawl signale les notes d''un hôte sans le module infra' -Skip:$HasInfra {
+        (Invoke-Hook -EventName 'PostToolUse' -Data (Tool 'Write' @{ file_path = (Join-Path $script:Root 'hosts/node-01/install-notes.md'); content = 'x' })).Decision | Should -Be 'context'
+    }
     It 'structural-watch signale un bloc structurel' {
         (Invoke-Hook -EventName 'PostToolUse' -Data (Tool 'Edit' @{ file_path = (Join-Path $script:Root 'scripts/launch.ps1') })).Reason | Should -Match '/upstream'
     }
@@ -899,5 +909,11 @@ Describe 'outils du harness : aide lisible par Get-Help' {
     It '<name> a un .SYNOPSIS que Get-Help affiche' -ForEach $Tools {
         (Get-Help $path).Synopsis | Should -Not -BeNullOrEmpty
         (Get-Help $path).Synopsis | Should -Not -Match '\.ps1\b.*\['
+    }
+}
+
+Describe 'modules installés' {
+    It 'les conventions du module <name> sont importées par core.md' -ForEach @(Get-ChildItem (Join-Path $PSScriptRoot '..' 'modules') -Directory -ErrorAction SilentlyContinue | ForEach-Object { @{ name = $_.Name } }) {
+        Get-Content (Join-Path $PSScriptRoot '..' 'agents' 'core.md') -Raw | Should -Match ([regex]::Escape("@../modules/$name/conventions.md"))
     }
 }
