@@ -126,7 +126,8 @@
     "^\\.claude/",
     "^\\.harness/",
     "^\\.github/"{% if kind == 'root' %},
-    "^project-ideas/(IDEAS\\.md$|_template\\.md$|ideas/)"{% endif %}
+    "^project-ideas/(IDEAS\\.md$|_template\\.md$|ideas/)"{% endif %}{% if 'infra' in modules %},
+    "^hosts/[^/]+/[^/]+\\.md$"{% endif %}
   ],
   "debugPatterns": [
     "console\\.(log|debug)\\(",

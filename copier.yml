@@ -47,8 +47,9 @@ modules:
     - dotnet
     - python
     - game
+    - infra
   validator: >-
-    {% if 'game' in modules and not ('dotnet' in modules and 'react' in modules) %}Le module game s'utilise avec dotnet et react.{% elif 'python' in modules and 'dotnet' in modules %}Un dépôt n'a qu'un seul backend : python et dotnet ne vont pas ensemble.{% endif %}
+    {% if 'game' in modules and not ('dotnet' in modules and 'react' in modules) %}Le module game s'utilise avec dotnet et react.{% elif 'python' in modules and 'dotnet' in modules %}Un dépôt n'a qu'un seul backend : python et dotnet ne vont pas ensemble.{% elif 'infra' in modules and kind != 'infra' %}Le module infra est réservé au dépôt d'infrastructure (type infra).{% endif %}
 
 hook_profile:
   type: str
