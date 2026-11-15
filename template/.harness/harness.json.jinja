@@ -92,7 +92,12 @@
     "/UserSecrets/",
     "(^|/)sops/age/keys\\.txt$",
     "\\.dec\\.ya?ml$",
-    "\\.decrypted\\."
+    "\\.decrypted\\.",
+    "(^|/)keys\\.txt$",
+    "\\.tfstate(\\.|$)",
+    "\\.tfvars(\\.json)?$",
+    "(^|/)(kubeconfig|k3s\\.yaml)$",
+    "(^|/)\\.kube/config$"
   ],
   "secretPathsAllow": [
     "\\.env\\.(example|sample|template|dist)$",
@@ -105,7 +110,13 @@
     "\\$env:\\w*(TOKEN|KEY|SECRET|PASSWORD|PAT|CREDENTIAL)\\w*",
     "\\$\\{?\\w*(TOKEN|SECRET|PASSWORD|API_KEY)\\w*\\}?",
     "\\bgh\\s+auth\\s+token\\b",
-    "\\bgit\\s+credential\\s+fill\\b"
+    "\\bgit\\s+credential\\s+fill\\b",
+    "\\bkubectl\\b[^;&|\\n]*\\bconfig\\s+view\\b[^;&|\\n]*--raw\\b",
+    "\\bkubectl\\b(?=[^;&|\\n]*\\bget\\s+\\S*\\bsecrets?\\b)(?=[^;&|\\n]*(\\s-o|\\s--output)\\s*=?\\s*['\"]?(yaml|json|jsonpath|go-template))",
+    "\\bkubectl\\b[^;&|\\n]*\\bedit\\s+\\S*\\bsecrets?\\b",
+    "\\b(tofu|terraform)(\\s+-\\S+)*\\s+(output|state\\s+pull)\\b",
+    "\\b(tofu|terraform)(\\s+-\\S+)*\\s+show\\b[^;&|\\n]*\\s-json\\b",
+    "\\bhelm\\b[^;&|\\n]*\\sget\\s+(?!notes\\b|metadata\\b)\\w"
   ],
   "secretTokens": {
     "jeton GitHub": "(gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{60,})",
