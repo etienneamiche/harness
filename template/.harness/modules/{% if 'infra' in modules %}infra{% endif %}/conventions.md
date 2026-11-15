@@ -38,13 +38,14 @@ docs/                       la doc
 
 - **Plan enregistré, puis apply de ce plan** : `tofu plan -out=<périmètre>.tfplan`, relu, puis `tofu apply <périmètre>.tfplan`. Jamais d'`apply` sans plan, ni d'`-auto-approve` sur un plan que l'utilisateur n'a pas vu.
 - **Versions figées** : `required_version` et `required_providers` avec une version exacte, et `.terraform.lock.hcl` commité.
-- **L'état et les plans ne vont jamais dans Git** (le bloc `.gitignore` du harness ignore `*.tfstate`, `*.tfplan` et `.terraform/`), et un agent ne lit jamais un `*.tfstate`, un `*.tfplan` ni un `*.tfvars` : ils contiennent des secrets en clair. Les valeurs sensibles arrivent par l'environnement (`sops exec-env`).
+- **L'état et les plans ne vont jamais dans Git** (le bloc `.gitignore` du harness ignore `*.tfstate`, `*.tfplan`, `*.tfvars` et `.terraform/`), et un agent ne lit jamais un `*.tfstate`, un `*.tfplan` ni un `*.tfvars` : ils contiennent des secrets en clair. Les valeurs sensibles arrivent par l'environnement (`sops exec-env`).
 - `tofu fmt` avant chaque commit.
 
 ## Ansible
 
 - **Ansible tourne dans WSL Ubuntu** : il n'est pas pris en charge nativement sous Windows. On le lance par `wsl ansible-playbook …`, depuis la racine du dépôt.
 - **Les rôles sont idempotents** : un deuxième passage ne change rien. `--check --diff` avant chaque vrai passage.
+- **Une tâche `check_mode: false` ne fait que lire** : elle s'exécute pour de vrai même sous `--check`, et `--check` ne reste une lecture qu'à cette condition.
 - **Une tâche qui manipule un secret porte `no_log: true` et `diff: false`** : sans cela, `--diff` affiche le fichier rendu avec ses valeurs.
 - **Collections et rôles figés** dans `ansible/requirements.yml`.
 - L'inventaire est versionné, sans secret. Les secrets viennent de SOPS (`community.sops`).
@@ -59,5 +60,5 @@ docs/                       la doc
 - **Seuls les `*.sops.yaml` chiffrés entrent dans Git**, sous `secrets/`.
 - **Un fichier de secrets est chiffré en entier**, sauf les manifestes `Secret` de Kubernetes. Pour eux seuls, une `creation_rule` de `.sops.yaml`, posée sur leur chemin, limite le chiffrement aux champs `data` et `stringData`, pour que leur structure reste lisible dans les diffs. Les secrets d'OpenTofu et d'Ansible ont leurs clés à plat : une règle `data`/`stringData` les laisserait en clair, avec pourtant un bloc `sops:` qui les fait paraître chiffrés.
 - **La clé age ne vit jamais dans le dépôt**, et un agent ne la lit jamais.
-- Un agent ne déchiffre pas un secret pour l'afficher : pas de `sops -d` dont la sortie arrive dans la conversation, pas de `kubectl get secret` avec une sortie `-o yaml`, `json`, `jsonpath` ou `go-template` (les valeurs n'y sont qu'en base64), pas de `kubectl edit secret`, pas de `kubectl config view --raw`, pas de lecture d'un kubeconfig. L'utilisateur modifie un secret lui-même, par `sops edit`.
+- Un agent ne déchiffre pas un secret pour l'afficher : pas de `sops -d` dont la sortie arrive dans la conversation, pas de `kubectl get secret` avec une sortie `-o yaml`, `json`, `jsonpath` ou `go-template` (les valeurs n'y sont qu'en base64), pas de `kubectl edit secret`, pas de `kubectl config view --raw`, pas de lecture d'un kubeconfig. Côté OpenTofu et Helm, `tofu output` (avec ou sans `-json` ou `-raw`), `tofu show -json`, `tofu state pull`, `helm get values` et `helm get manifest` affichent eux aussi les secrets en clair : ils ne se lancent pas. L'utilisateur modifie un secret lui-même, par `sops edit`.
 - Un nouveau secret se chiffre avant son premier commit (`sops -e -i`). Un secret commité en clair est compromis : on le change, puis on le chiffre.
