@@ -869,9 +869,10 @@ Describe 'pre-commit (gitleaks)' {
     }
     Context 'fichiers SOPS' {
         BeforeAll {
-            # Valeurs tronquées, de la forme que produit SOPS 3.x (indentation à 4 espaces).
+            # Valeurs tronquées, de la forme que produit SOPS 3.x (indentation à 4 espaces). Le bloc sops:
+            # suit celui de SOPS : un bloc plus sommaire déclenche la règle kubernetes-secret-yaml de gitleaks.
             $script:Enc = 'ENC[AES256_GCM,data:rF6t,iv:aXY=,tag:dGFn,type:str]'
-            $script:Meta = "sops:`n    age:`n        - recipient: age1exemple`n    lastmodified: `"2026-11-15T10:00:00Z`"`n    mac: $script:Enc`n    version: 3.13.3"
+            $script:Meta = "sops:`n    age:`n        - enc: |`n            -----BEGIN AGE ENCRYPTED FILE-----`n            YWdlLWVuY3J5cHRpb24ub3JnL3YxCg==`n            -----END AGE ENCRYPTED FILE-----`n          recipient: age1$('q' * 58)`n    lastmodified: `"2026-11-15T10:00:00Z`"`n    mac: $script:Enc`n    version: 3.13.3"
             function Test-Sops([string] $Name, [string] $Content) {
                 $path = Join-Path $script:Repo $Name
                 New-Item -ItemType Directory -Force (Split-Path $path) | Out-Null
