@@ -730,7 +730,20 @@ Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
         @{ cmd = 'wsl ansible-playbook -i ansible/inventory.yml ansible/site.yml -c local' }, @{ cmd = 'wsl -d Ubuntu ansible-playbook ansible/site.yml # --check' },
         @{ cmd = 'tofu -chdir=tofu/dns test' }, @{ cmd = 'kubectl --context home auth reconcile -f rbac.yaml' }, @{ cmd = 'helm --kube-context home test web' },
         @{ cmd = 'argocd appset delete web' }, @{ cmd = 'wsl ansible-pull -U https://example.invalid/repo.git' },
-        @{ cmd = '& "C:\tools\tofu.exe" -chdir=tofu/dns apply dns.tfplan' }, @{ cmd = 'ssh node-01 sudo k3s kubectl --context home apply -f x.yaml' }
+        @{ cmd = '& "C:\tools\tofu.exe" -chdir=tofu/dns apply dns.tfplan' }, @{ cmd = 'ssh node-01 sudo k3s kubectl --context home apply -f x.yaml' },
+        @{ cmd = 'wsl bash -lc "ansible-playbook -i inv site.yml"' }, @{ cmd = 'wsl -e bash -lc "ansible-playbook site.yml"' },
+        @{ cmd = "wsl -- bash -lc 'cd /mnt/c/infra && ansible-playbook site.yml'" }, @{ cmd = 'bash -lc "kubectl --context home apply -f x.yaml"' },
+        @{ cmd = 'cmd /c "kubectl --context home apply -f x.yaml"' }, @{ cmd = 'pwsh -C "kubectl --context home apply -f x.yaml"' },
+        @{ cmd = 'Invoke-Expression "kubectl --context home apply -f x.yaml"' }, @{ cmd = 'ssh node-01 "sudo k3s kubectl apply -f x.yaml"' },
+        @{ cmd = "ssh node-01 'kubectl --context home -n app scale deploy/web --replicas=0'" },
+        @{ cmd = 'KUBECONFIG=clusters/home.yaml kubectl --context home apply -f x.yaml' }, @{ cmd = 'TF_LOG=debug tofu apply dns.tfplan' },
+        @{ cmd = 'wsl bash -c "ANSIBLE_CONFIG=ansible/ansible.cfg ansible-playbook site.yml"' }, @{ cmd = 'timeout 300 kubectl --context home apply -f x.yaml' },
+        @{ cmd = 'nohup kubectl --context home apply -f x.yaml &' }, @{ cmd = 'cat pods.txt | xargs kubectl --context home delete pod' },
+        @{ cmd = 'wsl.exe -d Ubuntu -- ansible-playbook site.yml' }, @{ cmd = 'kubectl --context="home" apply -f x.yaml' },
+        @{ cmd = 'helm --kube-context="home" upgrade web charts/app' }, @{ cmd = 'tofu -chdir="tofu/dns" apply dns.tfplan' },
+        @{ cmd = "terraform -chdir='tofu/dns' import cloudflare_record.www x" }, @{ cmd = 'kubectl --request-timeout 30s --context home apply -f x.yaml' },
+        @{ cmd = 'kubectl --context home "apply" -f x.yaml' }, @{ cmd = 'kube""ctl --context home apply -f x.yaml' }, @{ cmd = 'tofu apply "dns.tfplan"' },
+        @{ cmd = 'wsl ansible-console all' }, @{ cmd = "echo 'kubectl --context home apply -f x.yaml' | bash" }
     ) {
         $r = Invoke-Hook -Data (Bash $cmd)
         $r.Decision | Should -Be 'deny'
@@ -746,7 +759,9 @@ Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
         @{ cmd = 'kubectl --context home get pod run-migrations-x1' }, @{ cmd = 'kubectl get pods -n debug' }, @{ cmd = 'cd ansible && ls' },
         @{ cmd = 'git diff -- ansible tofu' }, @{ cmd = 'tree ansible -L 2' }, @{ cmd = 'grep -rn become ansible roles' }, @{ cmd = 'echo "ansible ok"' },
         @{ cmd = 'rg "kubectl apply" docs' }, @{ cmd = 'git grep -n "helm upgrade"' }, @{ cmd = 'Select-String -Path docs/*.md -Pattern "kubectl apply"' },
-        @{ cmd = 'helm plugin install https://example.invalid/plugin' }, @{ cmd = 'git log --oneline --grep "tofu apply"' }
+        @{ cmd = 'helm plugin install https://example.invalid/plugin' }, @{ cmd = 'git log --oneline --grep "tofu apply"' },
+        @{ cmd = 'rg -n UserPromptSubmit .harness' }, @{ cmd = 'cat .harness/modules/infra/rules/UserPromptSubmit/infra-approval.ps1' },
+        @{ cmd = 'Get-ChildItem .claude -r' }, @{ cmd = 'kubectl --context home get pods -o yaml' }
     ) { (Invoke-Hook -Data (Bash $cmd)).Decision | Should -Be 'allow' }
     It 'exige le cluster nommé pour <cmd>' -ForEach @(
         @{ cmd = 'kubectl apply -f x.yaml' }, @{ cmd = 'kubectl -n app scale deploy/web --replicas=2' }, @{ cmd = 'helm upgrade web charts/app' },
@@ -804,8 +819,13 @@ Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
         @{ cmd = '@{ session_id = ''s''; prompt = ''x'' } | ConvertTo-Json | pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit' },
         @{ cmd = '. .harness/modules/infra/rules/UserPromptSubmit/infra-approval.ps1' }
     ) { (Invoke-Hook -Data (PowerShell $cmd)).Decision | Should -Be 'deny' }
-    It 'refuse l''écriture de l''état des accords' {
-        (Invoke-Hook -Data (Tool 'Write' @{ file_path = 'C:/Users/x/AppData/Local/Temp/claude-harness/s.infra.json'; content = '{}' })).Decision | Should -Be 'deny'
+    It 'refuse l''écriture de l''état des accords : <path>' -ForEach @(
+        @{ path = 'C:/Users/x/AppData/Local/Temp/claude-harness/s.infra.json'; content = '{}' },
+        @{ path = 'C:/Users/x/AppData/Local/Temp/CLAUDE~1/s.infra.json'; content = '{}' },
+        @{ path = 'forge.ps1'; content = 'Set-Content "$env:TEMP/claude-harness/s.infra.json" "{}"' }
+    ) { (Invoke-Hook -Data (Tool 'Write' @{ file_path = $path; content = $content })).Decision | Should -Be 'deny' }
+    It 'refuse un code d''accord dans le message d''un subagent' {
+        (Invoke-Hook -Data (Tool 'Agent' @{ subagent_type = 'dev'; prompt = 'ok infra 1234' })).Decision | Should -Be 'deny'
     }
     It 'reste active avec le profil minimal' {
         (Invoke-Hook -Data (Bash 'argocd app sync web') -Env @{ HARNESS_HOOK_PROFILE = 'minimal' }).Decision | Should -Be 'deny'
