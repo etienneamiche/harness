@@ -17,6 +17,9 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versions : [s
   - une action `kubectl` ou `helm` doit nommer son cluster (`--context`, `--kube-context`) ; `tofu apply` doit viser un plan enregistré (`*.tfplan`), et `tofu destroy` passe par `tofu plan -destroy -out=…`.
 - **Bloc `.gitignore` du harness** : `*.tfstate`, `*.tfstate.*`, `*.tfplan`, `*.tfvars`, `*.tfvars.json` et `.terraform/` y sont ignorés, dans tous les projets.
 
+### Corrigé
+- **Règles des modules** : le dispatcher ne les chargeait jamais. `Get-ChildItem` sur `.harness/modules/*/rules/<Événement>` avec `-Filter` rendait le dossier lui-même, pas ses fichiers. Aucun module n'avait encore de règle ; `infra-guard` est la première (#72).
+
 ### Modifié
 - **ponytail** : `settings.json` impose le mode `full` (`PONYTAIL_DEFAULT_MODE`), qu'une config personnelle ne coupe plus. Ses règles ne vont qu'aux subagents qui conçoivent, écrivent ou relisent du code : `dev`, `reviewer`, `auditor`, `architect` et `db-ops` (`PONYTAIL_SUBAGENT_MATCHER`). `git-ops`, `explorer` et `cartographer` ne les reçoivent plus, ni `linter`, dont les corrections sont mécaniques.
 - **Revues** : `reviewer`, `/review` et le guide d'`auditor` signalent la sur-ingénierie. Pour `auditor`, c'est un constat mineur, ou important pour une dépendance ajoutée sans besoin ou une couche que les conventions n'appellent pas.
