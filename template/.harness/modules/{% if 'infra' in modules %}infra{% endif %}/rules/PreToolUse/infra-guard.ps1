@@ -160,7 +160,7 @@
             return @{ Decision = 'deny'; Reason = "tofu apply se lance sur un plan enregistré : tofu plan -out=<périmètre>.tfplan, montrer le plan à l'utilisateur, puis tofu apply <périmètre>.tfplan." }
         }
         if ($needContext) {
-            return @{ Decision = 'deny'; Reason = "nommer le cluster visé : $needContext. Le contexte courant peut être le mauvais cluster." }
+            return @{ Decision = 'deny'; Reason = "nommer le cluster visé : kubectl --context <cluster>, helm --kube-context <cluster>. Le contexte courant peut être le mauvais cluster." }
         }
         if (-not $isAction) { return }
 
