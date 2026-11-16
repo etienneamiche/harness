@@ -25,6 +25,7 @@ foreach ($file in $staged) {
 #    Un manifeste `Secret` de Kubernetes n'a que `data` et `stringData` chiffrés ; tout autre fichier
 #    l'est en entier, commentaires compris. Lecture ligne à ligne de la version indexée, document
 #    YAML par document (SOPS écrit un bloc sops: par document) : chaque valeur doit être un ENC[…].
+$sopsKeys = '^\s+(age|kms|gcp_kms|azure_kv|hc_vault|hckms|pgp|key_groups|shamir_threshold|lastmodified|mac|mac_only_encrypted|version|(un)?encrypted_(suffix|regex|comment_regex)):'
 function Get-SopsProblem([string[]] $Lines) {
     $docs = [Collections.Generic.List[object]]::new()
     $doc = [Collections.Generic.List[string]]::new()
@@ -35,13 +36,23 @@ function Get-SopsProblem([string[]] $Lines) {
     foreach ($doc in $docs) {
         if (-not @($doc | Where-Object { $_ -match '\S' })) { continue }
         # Le bloc sops: va jusqu'à la ligne suivante qui n'est pas indentée : ce qui suit est contrôlé.
-        $inSops = $false; $hasMac = $false
+        # À son premier niveau, seules les clés de SOPS sont admises : une ligne indentée ajoutée en
+        # fin de fichier lui serait sinon rattachée sans contrôle.
+        $inSops = $false; $hasMac = $false; $strays = 0; $sopsIndent = $null
         $body = @(foreach ($line in $doc) {
-            if ($line -match '^\S') { $inSops = $line -match '^sops:\s*$'; if ($inSops) { continue } }
-            if ($inSops) { if ($line -match '^\s+mac:\s*ENC\[') { $hasMac = $true }; continue }
+            if ($line -match '^\S') { $inSops = $line -match '^sops:\s*$'; $sopsIndent = $null; if ($inSops) { continue } }
+            if ($inSops) {
+                if ($line -match '^\s+mac:\s*ENC\[') { $hasMac = $true }
+                if ($line -match '^(\s+)\S') {
+                    if ($null -eq $sopsIndent) { $sopsIndent = $Matches[1].Length }
+                    if ($Matches[1].Length -le $sopsIndent -and $line -notmatch $sopsKeys) { $strays++ }
+                }
+                continue
+            }
             $line
         })
         if (-not $hasMac) { return 'un document n''a pas de bloc sops: avec un mac chiffré' }
+        if ($strays) { return "$strays ligne(s) étrangère(s) au bloc sops:" }
         $isK8sSecret = @($body -match '^kind:\s*Secret\s*$').Count -gt 0 -and @($body -match '^apiVersion:\s*v1\s*$').Count -gt 0
         $section = ''
         $plain = @(foreach ($line in $body) {

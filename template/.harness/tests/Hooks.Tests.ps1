@@ -758,13 +758,19 @@ Describe 'secret-guard' {
         @{ cmd = 'kubectl get secret db -o custom-columns=P:.data.password' }, @{ cmd = 'kubectl config view --flatten' },
         @{ cmd = 'kubectl config view --minify --flatten' }, @{ cmd = 'tofu show --json' },
         @{ cmd = 'cat ~/.kube/home.yaml' }, @{ cmd = 'tar czf /tmp/k.tgz ~/.kube' }, @{ cmd = 'unzip -p dns.tfplan tfstate' },
-        @{ cmd = 'tar -xOf dns.tfplan tfstate' }
+        @{ cmd = 'tar -xOf dns.tfplan tfstate' }, @{ cmd = 'tofu plan -show-sensitive' },
+        @{ cmd = 'tofu -chdir=tofu/dns state show -show-sensitive x' }, @{ cmd = 'tofu show --show-sensitive' },
+        @{ cmd = 'tofu.exe output' }, @{ cmd = 'kubectl get --raw /api/v1/namespaces/app/secrets/db' },
+        @{ cmd = 'ssh vps sudo cat /var/lib/rancher/k3s/server/token' }
     ) { (Invoke-Hook -Data (Bash $cmd)).Decision | Should -Be 'deny' }
     It 'autorise la commande d''infra <cmd>' -ForEach @(
         @{ cmd = 'kubectl --context home get pods -o yaml' }, @{ cmd = 'kubectl get secrets' }, @{ cmd = 'kubectl describe secret db' },
         @{ cmd = 'kubectl config view' }, @{ cmd = 'tofu -chdir=tofu/dns plan -out=dns.tfplan' }, @{ cmd = 'tofu show dns.tfplan' },
         @{ cmd = 'tofu fmt -check -recursive' }, @{ cmd = 'helm get notes app' }, @{ cmd = 'echo "feat(tofu): add the dns output"' },
-        @{ cmd = 'tofu apply dns.tfplan' }, @{ cmd = 'kubectl get -n app pods -o yaml' }
+        @{ cmd = 'tofu apply dns.tfplan' }, @{ cmd = 'kubectl get -n app pods -o yaml' },
+        @{ cmd = 'kubectl --context home get pods -n external-secrets -o yaml' }, @{ cmd = 'kubectl get deploy -n sealed-secrets -o yaml' },
+        @{ cmd = 'kubectl get pods -o yaml -l app=secret-store' },
+        @{ cmd = "kubectl get pod web -o jsonpath='{.spec.volumes[*].secret.secretName}'" }, @{ cmd = 'kubectl get --raw /healthz' }
     ) { (Invoke-Hook -Data (Bash $cmd)).Decision | Should -Be 'allow' }
 }
 
@@ -932,6 +938,9 @@ Describe 'pre-commit (gitleaks)' {
         }
         It 'refuse un fichier en clair au nom non ASCII' {
             Test-Sops 'secrets/équipe.sops.yaml' "token: abc123" | Should -Not -Be 0
+        }
+        It 'refuse une ligne indentée ajoutée après le dernier bloc sops:' {
+            Test-Sops 'secrets/tail.sops.yaml' "token: $Enc`n$Meta`n    note: hunter2" | Should -Not -Be 0
         }
         It 'refuse un plan OpenTofu indexé de force' {
             Set-Content (Join-Path $script:Repo 'dns.tfplan') 'PK'
