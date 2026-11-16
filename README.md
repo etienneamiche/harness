@@ -86,8 +86,8 @@ cliff.toml                   config git-cliff du CHANGELOG (app, game, sandbox, 
 | `destructive-guard` | PreToolUse | standard, strict | Commande destructive refusée au premier essai |
 | `config-protection` | PreToolUse | standard, strict | Configs de lint, harness, CI, `.gitignore`, SOPS protégés |
 | `secret-prompt` | UserPromptSubmit | tous | Message contenant un jeton bloqué |
-| `infra-guard` (module `infra`) | PreToolUse | tous | Action sur l'infra (`tofu apply`, `ansible-playbook`, `kubectl apply`, `helm upgrade`, `argocd app sync`…) refusée avec un code, jusqu'à l'accord de l'utilisateur ; cluster nommé et plan enregistré exigés |
-| `infra-approval` (module `infra`) | UserPromptSubmit | tous | `ok infra <code>` écrit par l'utilisateur : la commande de ce code passe une fois |
+| `infra-guard` (module `infra`) | PreToolUse | tous | Action sur l'infra (`tofu apply`, `ansible-playbook`, `kubectl apply`, `helm upgrade`, `argocd app sync`…) refusée avec un code, jusqu'à l'accord de l'utilisateur ; cluster nommé et plan enregistré exigés ; état des accords protégé, au mieux |
+| `infra-approval` (module `infra`) | UserPromptSubmit | tous | `ok infra <code>` écrit par l'utilisateur, seul dans son message : la commande de ce code passe une fois |
 | `doc-sprawl` | PostToolUse | standard, strict | Markdown écrit hors de `docs/` signalé |
 | `structural-watch` | PostToolUse | standard, strict | Bloc venu d'un template modifié → `/upstream` |
 | `stop-checks` | Stop | standard, strict | Vérifications des modules ; traces de debug (strict) |

@@ -726,7 +726,11 @@ Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
         @{ cmd = 'kubectl --context home -n app exec web -- sh' }, @{ cmd = 'helm --kube-context home upgrade web charts/app' },
         @{ cmd = 'tofu -chdir=tofu/dns apply dns.tfplan' }, @{ cmd = 'tofu import cloudflare_record.www x' }, @{ cmd = 'tofu state rm x.y' },
         @{ cmd = 'wsl ansible-playbook -i ansible/inventory.yml ansible/site.yml' }, @{ cmd = 'wsl ansible all -m ping' },
-        @{ cmd = 'wsl ansible edge -m shell -a "uptime" --check' }, @{ cmd = 'argocd app sync web' }, @{ cmd = 'bash -c "kubectl --context home apply -f x.yaml"' }
+        @{ cmd = 'wsl ansible edge -m shell -a "uptime" --check' }, @{ cmd = 'argocd app sync web' }, @{ cmd = 'bash -c "kubectl --context home apply -f x.yaml"' },
+        @{ cmd = 'wsl ansible-playbook -i ansible/inventory.yml ansible/site.yml -c local' }, @{ cmd = 'wsl -d Ubuntu ansible-playbook ansible/site.yml # --check' },
+        @{ cmd = 'tofu -chdir=tofu/dns test' }, @{ cmd = 'kubectl --context home auth reconcile -f rbac.yaml' }, @{ cmd = 'helm --kube-context home test web' },
+        @{ cmd = 'argocd appset delete web' }, @{ cmd = 'wsl ansible-pull -U https://example.invalid/repo.git' },
+        @{ cmd = '& "C:\tools\tofu.exe" -chdir=tofu/dns apply dns.tfplan' }, @{ cmd = 'ssh node-01 sudo k3s kubectl --context home apply -f x.yaml' }
     ) {
         $r = Invoke-Hook -Data (Bash $cmd)
         $r.Decision | Should -Be 'deny'
@@ -737,17 +741,24 @@ Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
         @{ cmd = 'kubectl --context home logs deploy/web' }, @{ cmd = 'tofu -chdir=tofu/dns plan -out=dns.tfplan' }, @{ cmd = 'tofu show dns.tfplan' },
         @{ cmd = 'wsl ansible-playbook -i ansible/inventory.yml ansible/site.yml --check --diff' }, @{ cmd = 'wsl ansible --version' },
         @{ cmd = 'wsl ansible-lint ansible/' }, @{ cmd = 'helm --kube-context home template web charts/app' }, @{ cmd = 'argocd app diff web' },
-        @{ cmd = 'echo "feat(tofu): apply the dns plan"' }
+        @{ cmd = 'echo "feat(tofu): apply the dns plan"' }, @{ cmd = 'kubectl --context home get pods -l run=web' },
+        @{ cmd = 'kubectl --context home logs deploy/web -c debug' }, @{ cmd = 'kubectl --context home describe pod debug-7f9c' },
+        @{ cmd = 'kubectl --context home get pod run-migrations-x1' }, @{ cmd = 'kubectl get pods -n debug' }, @{ cmd = 'cd ansible && ls' },
+        @{ cmd = 'git diff -- ansible tofu' }, @{ cmd = 'tree ansible -L 2' }, @{ cmd = 'grep -rn become ansible roles' }, @{ cmd = 'echo "ansible ok"' },
+        @{ cmd = 'rg "kubectl apply" docs' }, @{ cmd = 'git grep -n "helm upgrade"' }, @{ cmd = 'Select-String -Path docs/*.md -Pattern "kubectl apply"' },
+        @{ cmd = 'helm plugin install https://example.invalid/plugin' }, @{ cmd = 'git log --oneline --grep "tofu apply"' }
     ) { (Invoke-Hook -Data (Bash $cmd)).Decision | Should -Be 'allow' }
     It 'exige le cluster nommé pour <cmd>' -ForEach @(
-        @{ cmd = 'kubectl apply -f x.yaml' }, @{ cmd = 'kubectl -n app scale deploy/web --replicas=2' }, @{ cmd = 'helm upgrade web charts/app' }
+        @{ cmd = 'kubectl apply -f x.yaml' }, @{ cmd = 'kubectl -n app scale deploy/web --replicas=2' }, @{ cmd = 'helm upgrade web charts/app' },
+        @{ cmd = 'kubectl apply -f x.yaml # --context home' }
     ) {
         $r = Invoke-Hook -Data (Bash $cmd)
         $r.Decision | Should -Be 'deny'
         $r.Reason | Should -Match '--context'
     }
     It 'exige un plan enregistré pour <cmd>' -ForEach @(
-        @{ cmd = 'tofu apply' }, @{ cmd = 'tofu -chdir=tofu/dns apply -auto-approve' }, @{ cmd = 'terraform apply -var-file=x' }, @{ cmd = 'tofu destroy' }
+        @{ cmd = 'tofu apply' }, @{ cmd = 'tofu -chdir=tofu/dns apply -auto-approve' }, @{ cmd = 'terraform apply -var-file=x' }, @{ cmd = 'tofu destroy' },
+        @{ cmd = 'tofu apply -auto-approve -var x=a.tfplan' }
     ) {
         $r = Invoke-Hook -Data (Bash $cmd) -Env @{ HARNESS_DISABLED_HOOKS = 'destructive-guard,secret-guard' }
         $r.Decision | Should -Be 'deny'
@@ -758,7 +769,7 @@ Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
         $code = Get-Code (Invoke-Hook -Data (Bash $cmd)).Reason
         (Invoke-Hook -Data (Bash $cmd)).Reason | Should -Match "ok infra $code"
         (Invoke-Hook -Data (Bash $cmd)).Decision | Should -Be 'deny'
-        $r = Invoke-Hook -EventName 'UserPromptSubmit' -Data @{ prompt = "c'est bon, ok infra $code" }
+        $r = Invoke-Hook -EventName 'UserPromptSubmit' -Data @{ prompt = "ok infra $code" }
         $r.Reason | Should -Match 'accord de l''utilisateur enregistré'
         (Invoke-Hook -Data (Bash $cmd)).Decision | Should -Be 'allow'
         $again = Invoke-Hook -Data (Bash $cmd)
@@ -778,8 +789,23 @@ Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
         (Invoke-Hook -EventName 'UserPromptSubmit' -Data @{ prompt = "ok infra $other" }).Reason | Should -Match 'code inconnu'
         (Invoke-Hook -Data (Bash $cmd)).Decision | Should -Be 'deny'
     }
-    It 'refuse une commande qui cite un code d''accord' {
-        (Invoke-Hook -Data (Bash 'claude -p "ok infra 1234" --resume x')).Decision | Should -Be 'deny'
+    It 'n''enregistre rien pour un message qui contient autre chose que le code : <prompt>' -ForEach @(
+        @{ prompt = 'non, pas ok infra {0} : le plan coupe le site' }, @{ prompt = "ok infra {0}`net maintenant fais le reste" }, @{ prompt = 'ok infra {0} merci' }
+    ) {
+        $cmd = 'argocd app sync web'
+        $code = Get-Code (Invoke-Hook -Data (Bash $cmd)).Reason
+        (Invoke-Hook -EventName 'UserPromptSubmit' -Data @{ prompt = ($prompt -f $code) }).Reason | Should -Match 'aucun accord'
+        (Invoke-Hook -Data (Bash $cmd)).Decision | Should -Be 'deny'
+    }
+    It 'refuse ce qui donnerait un accord sans l''utilisateur : <cmd>' -ForEach @(
+        @{ cmd = 'claude -p "ok infra 1234" --resume x' }, @{ cmd = '$c = ''12'' + ''34''; claude -p "ok infra $c" --resume abc' },
+        @{ cmd = 'claude -p --resume abc < prompt.txt' }, @{ cmd = 'claude -c -p go' },
+        @{ cmd = 'Get-Content $env:TEMP/claude-harness/s.infra.json' }, @{ cmd = 'Get-ChildItem $env:TEMP/claude-harness' },
+        @{ cmd = '@{ session_id = ''s''; prompt = ''x'' } | ConvertTo-Json | pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit' },
+        @{ cmd = '. .harness/modules/infra/rules/UserPromptSubmit/infra-approval.ps1' }
+    ) { (Invoke-Hook -Data (PowerShell $cmd)).Decision | Should -Be 'deny' }
+    It 'refuse l''écriture de l''état des accords' {
+        (Invoke-Hook -Data (Tool 'Write' @{ file_path = 'C:/Users/x/AppData/Local/Temp/claude-harness/s.infra.json'; content = '{}' })).Decision | Should -Be 'deny'
     }
     It 'reste active avec le profil minimal' {
         (Invoke-Hook -Data (Bash 'argocd app sync web') -Env @{ HARNESS_HOOK_PROFILE = 'minimal' }).Decision | Should -Be 'deny'
