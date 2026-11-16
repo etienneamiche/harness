@@ -58,7 +58,7 @@ cliff.toml                   config git-cliff du CHANGELOG (app, game, sandbox, 
   harness.json               configuration des règles, selon le type de dépôt
   hooks/dispatch.ps1         point d'entrée unique des hooks
   hooks/rules/<Événement>/   une règle par fichier
-  githooks/pre-commit        gitleaks + noms de fichiers secrets
+  githooks/pre-commit        noms de fichiers secrets, chiffrement des *.sops.yaml, gitleaks
   tools/                     post-install, doctor, manifeste, merge-pr (seul chemin de fusion), board (carte sur le Project)
   tests/                     autotests Pester des hooks
 ```

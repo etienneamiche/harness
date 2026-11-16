@@ -733,6 +733,51 @@ Describe 'secret-guard' {
     It 'autorise la commande <cmd>' -ForEach @(
         @{ cmd = "sops exec-env secrets/app.sops.yaml 'dotnet run'" }, @{ cmd = 'npm test' }, @{ cmd = 'cp .env.example .env.sample' }
     ) { (Invoke-Hook -Data (Bash $cmd)).Decision | Should -Be 'allow' }
+    It 'refuse la lecture du secret d''infra <path>' -ForEach @(
+        @{ path = 'keys.txt' }, @{ path = 'tofu/dns/terraform.tfstate' }, @{ path = 'tofu/dns/terraform.tfstate.backup' },
+        @{ path = 'tofu/dns/prod.tfvars' }, @{ path = 'tofu/dns/terraform.tfvars.json' }, @{ path = 'clusters/home/kubeconfig' },
+        @{ path = 'k3s.yaml' }, @{ path = 'C:/Users/x/.kube/config' }, @{ path = 'C:/Users/x/.kube/home.yaml' },
+        @{ path = 'clusters/home/kubeconfig.yaml' }, @{ path = 'home.kubeconfig' }
+    ) { (Invoke-Hook -Data (Tool 'Read' @{ file_path = $path })).Decision | Should -Be 'deny' }
+    It 'autorise le fichier d''infra <path>' -ForEach @(
+        @{ path = 'tofu/dns/.terraform.lock.hcl' }, @{ path = 'tofu/dns/main.tf' }, @{ path = 'tofu/dns/prod.tfvars.example' },
+        @{ path = 'secrets/tofu.sops.yaml' }, @{ path = '.sops.yaml' }
+    ) { (Invoke-Hook -Data (Tool 'Read' @{ file_path = $path })).Decision | Should -Be 'allow' }
+    It 'refuse la commande d''infra <cmd>' -ForEach @(
+        @{ cmd = 'kubectl config view --raw' }, @{ cmd = 'kubectl --context home config view --minify --raw' },
+        @{ cmd = 'kubectl get secret db -o yaml' }, @{ cmd = 'kubectl -n app get secrets -ojson' },
+        @{ cmd = "kubectl get secret/db --output=jsonpath='{.data}'" }, @{ cmd = 'kubectl get configmap,secret -o go-template=x' },
+        @{ cmd = 'kubectl --context vps edit secret db' }, @{ cmd = 'tofu output' }, @{ cmd = 'tofu -chdir=tofu/dns output -json' },
+        @{ cmd = 'terraform output -raw token' }, @{ cmd = 'tofu show -json dns.tfplan' }, @{ cmd = 'tofu state pull' },
+        @{ cmd = 'helm get values app' }, @{ cmd = 'helm get manifest app -n app' }, @{ cmd = 'helm --kube-context home get all app' },
+        @{ cmd = 'cat ~/.kube/config' }, @{ cmd = 'Get-Content tofu/dns/terraform.tfstate' }, @{ cmd = 'bash -c "kubectl get secret db -o yaml"' },
+        @{ cmd = 'kubectl get -n app secret db -o yaml' }, @{ cmd = 'kubectl get --namespace=app secret db -o json' },
+        @{ cmd = 'kubectl get -A secrets -o yaml' }, @{ cmd = "kubectl --context home get -n app secret db -o jsonpath='{.data.password}'" },
+        @{ cmd = 'kubectl edit -n app secret db' }, @{ cmd = "kubectl get secret db --template='{{.data.password}}'" },
+        @{ cmd = 'kubectl get secret db -o template=x' }, @{ cmd = 'kubectl get secret db -o kyaml' },
+        @{ cmd = 'kubectl get secret db -o custom-columns=P:.data.password' }, @{ cmd = 'kubectl config view --flatten' },
+        @{ cmd = 'kubectl config view --minify --flatten' }, @{ cmd = 'tofu show --json' },
+        @{ cmd = 'cat ~/.kube/home.yaml' }, @{ cmd = 'tar czf /tmp/k.tgz ~/.kube' }, @{ cmd = 'unzip -p dns.tfplan tfstate' },
+        @{ cmd = 'tar -xOf dns.tfplan tfstate' }, @{ cmd = 'tofu plan -show-sensitive' },
+        @{ cmd = 'tofu -chdir=tofu/dns state show -show-sensitive x' }, @{ cmd = 'tofu show --show-sensitive' },
+        @{ cmd = 'tofu.exe output' }, @{ cmd = 'kubectl get --raw /api/v1/namespaces/app/secrets/db' },
+        @{ cmd = 'ssh vps sudo cat /var/lib/rancher/k3s/server/token' }, @{ cmd = 'ssh vps sudo cat /var/lib/rancher/k3s/server/agent-token' },
+        @{ cmd = 'kubectl get "secret/db" -o jsonpath="{.data.password}"' }, @{ cmd = "kubectl get 'secret/db' -o yaml" },
+        @{ cmd = 'kubectl get "secret" db -o yaml' }, @{ cmd = 'kubectl edit -n app "secret/db"' },
+        @{ cmd = 'kubectl get -f ./secrets/db.sops.yaml -o yaml' }, @{ cmd = 'kubectl get -f k8s/app/secret.yaml -o yaml' },
+        @{ cmd = '& "C:\tools\tofu.exe" output -json' }
+    ) { (Invoke-Hook -Data (Bash $cmd)).Decision | Should -Be 'deny' }
+    It 'autorise la commande d''infra <cmd>' -ForEach @(
+        @{ cmd = 'kubectl --context home get pods -o yaml' }, @{ cmd = 'kubectl get secrets' }, @{ cmd = 'kubectl describe secret db' },
+        @{ cmd = 'kubectl config view' }, @{ cmd = 'tofu -chdir=tofu/dns plan -out=dns.tfplan' }, @{ cmd = 'tofu show dns.tfplan' },
+        @{ cmd = 'tofu fmt -check -recursive' }, @{ cmd = 'helm get notes app' }, @{ cmd = 'echo "feat(tofu): add the dns output"' },
+        @{ cmd = 'tofu apply dns.tfplan' }, @{ cmd = 'kubectl get -n app pods -o yaml' },
+        @{ cmd = 'kubectl --context home get pods -n external-secrets -o yaml' }, @{ cmd = 'kubectl get deploy -n sealed-secrets -o yaml' },
+        @{ cmd = 'kubectl get pods -o yaml -l app=secret-store' },
+        @{ cmd = "kubectl get pod web -o jsonpath='{.spec.volumes[*].secret.secretName}'" }, @{ cmd = 'kubectl get --raw /healthz' },
+        @{ cmd = 'kubectl get -f k8s/apps/secret-store/deploy.yaml -o yaml' }, @{ cmd = 'kubectl get secretstores -o yaml' },
+        @{ cmd = 'kubectl get events --field-selector involvedObject.kind=Secret -o yaml' }
+    ) { (Invoke-Hook -Data (Bash $cmd)).Decision | Should -Be 'allow' }
 }
 
 Describe 'secret-prompt' {
@@ -843,6 +888,71 @@ Describe 'pre-commit (gitleaks)' {
         Set-Content (Join-Path $script:Repo 'app.ts') 'export const answer = 42;'
         git -C $script:Repo add app.ts
         Test-PreCommit | Should -Be 0
+    }
+    Context 'fichiers SOPS' {
+        BeforeAll {
+            # Valeurs tronquées, de la forme que produit SOPS 3.x (indentation à 4 espaces). Le bloc sops:
+            # suit celui de SOPS : un bloc plus sommaire déclenche la règle kubernetes-secret-yaml de gitleaks.
+            $script:Enc = 'ENC[AES256_GCM,data:rF6t,iv:aXY=,tag:dGFn,type:str]'
+            $script:Meta = "sops:`n    age:`n        - enc: |`n            -----BEGIN AGE ENCRYPTED FILE-----`n            YWdlLWVuY3J5cHRpb24ub3JnL3YxCg==`n            -----END AGE ENCRYPTED FILE-----`n          recipient: age1$('q' * 58)`n    lastmodified: `"2026-11-15T10:00:00Z`"`n    mac: $script:Enc`n    version: 3.13.3"
+            function Test-Sops([string] $Name, [string] $Content) {
+                $path = Join-Path $script:Repo $Name
+                New-Item -ItemType Directory -Force (Split-Path $path) | Out-Null
+                Set-Content $path $Content
+                git -C $script:Repo add -f $Name
+                Test-PreCommit
+            }
+        }
+        It 'accepte un fichier chiffré en entier' {
+            Test-Sops 'secrets/tofu.sops.yaml' "token: $Enc`ncloudflare:`n    zone_id: $Enc`nhosts:`n    - $Enc`n    - name: $Enc`n$Meta" | Should -Be 0
+        }
+        It 'accepte un Secret Kubernetes dont seuls data et stringData sont chiffrés' {
+            Test-Sops 'secrets/k8s/db.sops.yaml' "apiVersion: v1`nkind: Secret`nmetadata:`n    name: db`ntype: Opaque`nstringData:`n    password: $Enc`ndata:`n    user: $Enc`n$Meta" | Should -Be 0
+        }
+        It 'refuse un fichier à plat chiffré par une règle data|stringData' {
+            Test-Sops 'secrets/wrong.sops.yaml' "token: abc123`ncloudflare:`n    zone_id: z1`n$Meta" | Should -Not -Be 0
+        }
+        It 'refuse un Secret Kubernetes dont stringData est en clair' {
+            Test-Sops 'secrets/k8s/db.sops.yaml' "apiVersion: v1`nkind: Secret`nmetadata:`n    name: db`nstringData:`n    password: hunter2`n$Meta" | Should -Not -Be 0
+        }
+        It 'refuse un fichier jamais chiffré' {
+            Test-Sops 'secrets/app.sops.yaml' "token: $Enc" | Should -Not -Be 0
+        }
+        It 'refuse un texte en bloc laissé en clair' {
+            Test-Sops 'secrets/note.sops.yaml' "token: $Enc`nnote: |`n    ligne en clair`n$Meta" | Should -Not -Be 0
+        }
+        It 'accepte le fichier de règles .sops.yaml' {
+            Test-Sops '.sops.yaml' "creation_rules:`n    - path_regex: \.sops\.yaml`$`n      age: age1exemple" | Should -Be 0
+        }
+        It 'refuse une valeur en clair ajoutée après le bloc sops:' {
+            Test-Sops 'secrets/app.sops.yaml' "token: $Enc`n$Meta`nnew_token: abc123" | Should -Not -Be 0
+        }
+        It 'accepte un fichier de plusieurs documents chiffrés' {
+            Test-Sops 'secrets/k8s/multi.sops.yaml' "apiVersion: v1`nkind: Secret`nmetadata:`n    name: a`ndata:`n    p: $Enc`n$Meta`n---`napiVersion: v1`nkind: Secret`nmetadata:`n    name: b`ndata:`n    p: $Enc`n$Meta" | Should -Be 0
+        }
+        It 'refuse un second document laissé en clair' {
+            Test-Sops 'secrets/k8s/multi.sops.yaml' "apiVersion: v1`nkind: Secret`nmetadata:`n    name: a`ndata:`n    p: $Enc`n$Meta`n---`napiVersion: v1`nkind: Secret`nmetadata:`n    name: b`nstringData:`n    password: hunter2" | Should -Not -Be 0
+        }
+        It 'accepte les valeurs vides que SOPS laisse en clair' {
+            Test-Sops 'secrets/empty.sops.yaml' "token: $Enc`nnone: null`ntilde: ~`nblank: `"`"`nmap: {}`nlist: []`n$Meta" | Should -Be 0
+        }
+        It 'refuse un commentaire en clair dans un fichier chiffré en entier' {
+            Test-Sops 'secrets/comment.sops.yaml' "#ENC[AES256_GCM,data:aGk=,iv:aXY=,tag:dGFn,type:comment]`n# ancien jeton : abc123`ntoken: $Enc`n$Meta" | Should -Not -Be 0
+        }
+        It 'refuse kind: Secret sans apiVersion v1 : le fichier reste à chiffrer en entier' {
+            Test-Sops 'secrets/flat.sops.yaml' "kind: Secret`ndata:`n    p: $Enc`ntoken: abc123`n$Meta" | Should -Not -Be 0
+        }
+        It 'refuse un fichier en clair au nom non ASCII' {
+            Test-Sops 'secrets/équipe.sops.yaml' "token: abc123" | Should -Not -Be 0
+        }
+        It 'refuse une ligne indentée ajoutée après le dernier bloc sops:' {
+            Test-Sops 'secrets/tail.sops.yaml' "token: $Enc`n$Meta`n    note: hunter2" | Should -Not -Be 0
+        }
+        It 'refuse un plan OpenTofu indexé de force' {
+            Set-Content (Join-Path $script:Repo 'dns.tfplan') 'PK'
+            git -C $script:Repo add -f dns.tfplan
+            Test-PreCommit | Should -Not -Be 0
+        }
     }
 }
 }
