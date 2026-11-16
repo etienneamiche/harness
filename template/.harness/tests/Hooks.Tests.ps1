@@ -679,7 +679,7 @@ Describe 'destructive-guard' {
         (Invoke-Hook -Data (Bash 'rm -rf build')).Decision | Should -Be 'allow'
     }
     It 'accepte au deuxième essai chaque commande d''une même session' {
-        $cmds = 'rm -rf build', 'git reset --hard HEAD~1', 'tofu destroy'
+        $cmds = 'rm -rf build', 'git reset --hard HEAD~1', 'git branch -D old'
         foreach ($c in $cmds) {
             (Invoke-Hook -Data (Bash $c)).Decision | Should -Be 'deny'
             (Invoke-Hook -Data (Bash $c)).Decision | Should -Be 'allow'
@@ -693,8 +693,8 @@ Describe 'destructive-guard' {
         '["0123456789abcdef0123456789abcdef"]' | Set-Content (Get-HarnessStatePath $script:SessionId 'destructive')
         (Invoke-Hook -Data (Bash 'rm -rf build')).Decision | Should -Be 'deny'
         (Invoke-Hook -Data (Bash 'rm -rf build')).Decision | Should -Be 'allow'
-        (Invoke-Hook -Data (Bash 'tofu destroy')).Decision | Should -Be 'deny'
-        (Invoke-Hook -Data (Bash 'tofu destroy')).Decision | Should -Be 'allow'
+        (Invoke-Hook -Data (Bash 'git branch -D old')).Decision | Should -Be 'deny'
+        (Invoke-Hook -Data (Bash 'git branch -D old')).Decision | Should -Be 'allow'
     }
     It 'reconnaît <cmd>' -ForEach @(
         @{ cmd = 'Remove-Item ./dist -Recurse -Force' }, @{ cmd = 'git reset --hard HEAD~1' },
@@ -852,7 +852,7 @@ Describe 'secret-guard' {
         @{ cmd = "kubectl get pod web -o jsonpath='{.spec.volumes[*].secret.secretName}'" }, @{ cmd = 'kubectl get --raw /healthz' },
         @{ cmd = 'kubectl get -f k8s/apps/secret-store/deploy.yaml -o yaml' }, @{ cmd = 'kubectl get secretstores -o yaml' },
         @{ cmd = 'kubectl get events --field-selector involvedObject.kind=Secret -o yaml' }
-    ) { (Invoke-Hook -Data (Bash $cmd)).Decision | Should -Be 'allow' }
+    ) { (Invoke-Hook -Data (Bash $cmd) -Env @{ HARNESS_DISABLED_HOOKS = 'infra-guard' }).Decision | Should -Be 'allow' }
 }
 
 Describe 'secret-prompt' {
