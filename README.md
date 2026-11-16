@@ -22,7 +22,7 @@ Questions posées : nom, description, **type de dépôt** (`app`, `game`, `sandb
 | `dotnet` | Un backend .NET | Conventions .NET, `analyzers.globalconfig`, vérifications `dotnet format` + build + numéros de migration, subagent `db-ops`, skills `dotnet-webapi` et `optimizing-ef-core-queries`, plugin `csharp-lsp` |
 | `python` | Un petit module Python | Conventions Python, vérifications ruff + pyright, plugin `pyright-lsp` |
 | `game` | Un jeu multijoueur (avec `react` et `dotnet`) | Conventions jeu : serveur qui fait autorité, règles pures, salles, sauvegardes |
-| `infra` | Le dépôt d'infrastructure (type `infra`) | Conventions OpenTofu, Ansible (dans WSL), Kubernetes en GitOps et SOPS + age, accord de l'utilisateur avant toute action sur l'infra, notes `hosts/<hôte>/*.md` acceptées par `doc-sprawl` |
+| `infra` | Le dépôt d'infrastructure (type `infra`) | Conventions OpenTofu, Ansible (dans WSL), Kubernetes en GitOps et SOPS + age, accord de l'utilisateur avant toute action sur l'infra (règles `infra-guard` et `infra-approval`), notes `hosts/<hôte>/*.md` acceptées par `doc-sprawl` |
 
 Un module vit dans `template/.harness/modules/{% if '<nom>' in modules %}<nom>{% endif %}/` (le nom conditionnel fait qu'il n'est créé que si le module est choisi) : `conventions.md` (importé par `core.md`), `module.json` (vérifications de fin de tour `stopChecks`, blocs structurels `structural`), et ses fichiers de configuration.
 
@@ -86,6 +86,8 @@ cliff.toml                   config git-cliff du CHANGELOG (app, game, sandbox, 
 | `destructive-guard` | PreToolUse | standard, strict | Commande destructive refusée au premier essai |
 | `config-protection` | PreToolUse | standard, strict | Configs de lint, harness, CI, `.gitignore`, SOPS protégés |
 | `secret-prompt` | UserPromptSubmit | tous | Message contenant un jeton bloqué |
+| `infra-guard` (module `infra`) | PreToolUse | tous | Action sur l'infra (`tofu apply`, `ansible-playbook`, `kubectl apply`, `helm upgrade`, `argocd app sync`…) refusée avec un code, jusqu'à l'accord de l'utilisateur ; cluster nommé et plan enregistré exigés |
+| `infra-approval` (module `infra`) | UserPromptSubmit | tous | `ok infra <code>` écrit par l'utilisateur : la commande de ce code passe une fois |
 | `doc-sprawl` | PostToolUse | standard, strict | Markdown écrit hors de `docs/` signalé |
 | `structural-watch` | PostToolUse | standard, strict | Bloc venu d'un template modifié → `/upstream` |
 | `stop-checks` | Stop | standard, strict | Vérifications des modules ; traces de debug (strict) |

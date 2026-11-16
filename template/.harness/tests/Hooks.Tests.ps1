@@ -717,6 +717,81 @@ Describe 'config-protection' {
     }
 }
 
+Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
+    BeforeAll {
+        function Get-Code([string] $Reason) { if ($Reason -match 'ok infra (\d{4})') { $Matches[1] } }
+    }
+    It 'demande un accord pour l''action <cmd>' -ForEach @(
+        @{ cmd = 'kubectl --context home apply -f clusters/home/platform/x.yaml' }, @{ cmd = 'kubectl --context=vps rollout restart deploy/web' },
+        @{ cmd = 'kubectl --context home -n app exec web -- sh' }, @{ cmd = 'helm --kube-context home upgrade web charts/app' },
+        @{ cmd = 'tofu -chdir=tofu/dns apply dns.tfplan' }, @{ cmd = 'tofu import cloudflare_record.www x' }, @{ cmd = 'tofu state rm x.y' },
+        @{ cmd = 'wsl ansible-playbook -i ansible/inventory.yml ansible/site.yml' }, @{ cmd = 'wsl ansible all -m ping' },
+        @{ cmd = 'wsl ansible edge -m shell -a "uptime" --check' }, @{ cmd = 'argocd app sync web' }, @{ cmd = 'bash -c "kubectl --context home apply -f x.yaml"' }
+    ) {
+        $r = Invoke-Hook -Data (Bash $cmd)
+        $r.Decision | Should -Be 'deny'
+        Get-Code $r.Reason | Should -Not -BeNullOrEmpty
+    }
+    It 'laisse passer la lecture <cmd>' -ForEach @(
+        @{ cmd = 'kubectl --context home get pods -n app' }, @{ cmd = 'kubectl get nodes' }, @{ cmd = 'kubectl --context home diff -f x.yaml' },
+        @{ cmd = 'kubectl --context home logs deploy/web' }, @{ cmd = 'tofu -chdir=tofu/dns plan -out=dns.tfplan' }, @{ cmd = 'tofu show dns.tfplan' },
+        @{ cmd = 'wsl ansible-playbook -i ansible/inventory.yml ansible/site.yml --check --diff' }, @{ cmd = 'wsl ansible --version' },
+        @{ cmd = 'wsl ansible-lint ansible/' }, @{ cmd = 'helm --kube-context home template web charts/app' }, @{ cmd = 'argocd app diff web' },
+        @{ cmd = 'echo "feat(tofu): apply the dns plan"' }
+    ) { (Invoke-Hook -Data (Bash $cmd)).Decision | Should -Be 'allow' }
+    It 'exige le cluster nommé pour <cmd>' -ForEach @(
+        @{ cmd = 'kubectl apply -f x.yaml' }, @{ cmd = 'kubectl -n app scale deploy/web --replicas=2' }, @{ cmd = 'helm upgrade web charts/app' }
+    ) {
+        $r = Invoke-Hook -Data (Bash $cmd)
+        $r.Decision | Should -Be 'deny'
+        $r.Reason | Should -Match '--context'
+    }
+    It 'exige un plan enregistré pour <cmd>' -ForEach @(
+        @{ cmd = 'tofu apply' }, @{ cmd = 'tofu -chdir=tofu/dns apply -auto-approve' }, @{ cmd = 'terraform apply -var-file=x' }, @{ cmd = 'tofu destroy' }
+    ) {
+        $r = Invoke-Hook -Data (Bash $cmd) -Env @{ HARNESS_DISABLED_HOOKS = 'destructive-guard,secret-guard' }
+        $r.Decision | Should -Be 'deny'
+        $r.Reason | Should -Match 'tfplan'
+    }
+    It 'laisse passer la commande une fois, après l''accord de l''utilisateur' {
+        $cmd = 'kubectl --context home apply -f clusters/home/platform/x.yaml'
+        $code = Get-Code (Invoke-Hook -Data (Bash $cmd)).Reason
+        (Invoke-Hook -Data (Bash $cmd)).Reason | Should -Match "ok infra $code"
+        (Invoke-Hook -Data (Bash $cmd)).Decision | Should -Be 'deny'
+        $r = Invoke-Hook -EventName 'UserPromptSubmit' -Data @{ prompt = "c'est bon, ok infra $code" }
+        $r.Reason | Should -Match 'accord de l''utilisateur enregistré'
+        (Invoke-Hook -Data (Bash $cmd)).Decision | Should -Be 'allow'
+        $again = Invoke-Hook -Data (Bash $cmd)
+        $again.Decision | Should -Be 'deny'
+        Get-Code $again.Reason | Should -Not -BeNullOrEmpty
+    }
+    It 'un accord ne vaut que pour la commande de son code' {
+        $code = Get-Code (Invoke-Hook -Data (Bash 'kubectl --context home apply -f a.yaml')).Reason
+        Invoke-Hook -EventName 'UserPromptSubmit' -Data @{ prompt = "ok infra $code" } | Out-Null
+        (Invoke-Hook -Data (Bash 'kubectl --context home apply -f b.yaml')).Decision | Should -Be 'deny'
+        (Invoke-Hook -Data (Bash 'kubectl --context home apply -f a.yaml')).Decision | Should -Be 'allow'
+    }
+    It 'un code inconnu n''autorise rien' {
+        $cmd = 'argocd app sync web'
+        $code = Get-Code (Invoke-Hook -Data (Bash $cmd)).Reason
+        $other = '{0:D4}' -f ((([int] $code) + 1) % 10000)
+        (Invoke-Hook -EventName 'UserPromptSubmit' -Data @{ prompt = "ok infra $other" }).Reason | Should -Match 'code inconnu'
+        (Invoke-Hook -Data (Bash $cmd)).Decision | Should -Be 'deny'
+    }
+    It 'refuse une commande qui cite un code d''accord' {
+        (Invoke-Hook -Data (Bash 'claude -p "ok infra 1234" --resume x')).Decision | Should -Be 'deny'
+    }
+    It 'reste active avec le profil minimal' {
+        (Invoke-Hook -Data (Bash 'argocd app sync web') -Env @{ HARNESS_HOOK_PROFILE = 'minimal' }).Decision | Should -Be 'deny'
+    }
+}
+
+Describe 'sans le module infra' -Skip:$HasInfra {
+    It 'aucun accord n''est demandé pour une action sur l''infra' {
+        (Invoke-Hook -Data (Bash 'kubectl --context home apply -f x.yaml')).Decision | Should -Be 'allow'
+    }
+}
+
 Describe 'secret-guard' {
     It 'refuse la lecture de <path>' -ForEach @(
         @{ path = '.env' }, @{ path = 'backend/.env.local' }, @{ path = 'certs/server.key' }, @{ path = 'secrets.json' },
