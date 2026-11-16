@@ -96,8 +96,9 @@
     "(^|/)keys\\.txt$",
     "\\.tfstate(\\.|$)",
     "\\.tfvars(\\.json)?$",
-    "(^|/)(kubeconfig|k3s\\.yaml)$",
-    "(^|/)\\.kube/config$"
+    "(^|/)([^/]+\\.)?kubeconfig(\\.ya?ml)?$",
+    "(^|/)k3s\\.yaml$",
+    "(^|/)\\.kube(/|$)"
   ],
   "secretPathsAllow": [
     "\\.env\\.(example|sample|template|dist)$",
@@ -111,11 +112,12 @@
     "\\$\\{?\\w*(TOKEN|SECRET|PASSWORD|API_KEY)\\w*\\}?",
     "\\bgh\\s+auth\\s+token\\b",
     "\\bgit\\s+credential\\s+fill\\b",
-    "\\bkubectl\\b[^;&|\\n]*\\bconfig\\s+view\\b[^;&|\\n]*--raw\\b",
-    "\\bkubectl\\b(?=[^;&|\\n]*\\bget\\s+\\S*\\bsecrets?\\b)(?=[^;&|\\n]*(\\s-o|\\s--output)\\s*=?\\s*['\"]?(yaml|json|jsonpath|go-template))",
-    "\\bkubectl\\b[^;&|\\n]*\\bedit\\s+\\S*\\bsecrets?\\b",
+    "\\bkubectl\\b[^;&|\\n]*\\bconfig\\s+view\\b[^;&|\\n]*--(raw|flatten)\\b",
+    "\\bkubectl\\b(?=[^;&|\\n]*\\sget\\s[^;&|\\n]*\\bsecrets?\\b)(?=[^;&|\\n]*((\\s-o|\\s--output)\\s*=?\\s*['\"]?(k?yaml|json|jsonpath|jsonpath-file|go-template|go-template-file|template|templatefile|custom-columns|custom-columns-file)|\\s--template\\b))",
+    "\\bkubectl\\b[^;&|\\n]*\\sedit\\s[^;&|\\n]*\\bsecrets?\\b",
     "\\b(tofu|terraform)(\\s+-\\S+)*\\s+(output|state\\s+pull)\\b",
-    "\\b(tofu|terraform)(\\s+-\\S+)*\\s+show\\b[^;&|\\n]*\\s-json\\b",
+    "\\b(tofu|terraform)(\\s+-\\S+)*\\s+show\\b[^;&|\\n]*\\s--?json\\b",
+    "\\b(unzip|tar|7z|jar|Expand-Archive)\\b[^;&|\\n]*\\.tfplan\\b",
     "\\bhelm\\b[^;&|\\n]*\\sget\\s+(?!notes\\b|metadata\\b)\\w"
   ],
   "secretTokens": {

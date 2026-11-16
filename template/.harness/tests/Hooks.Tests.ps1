@@ -736,7 +736,8 @@ Describe 'secret-guard' {
     It 'refuse la lecture du secret d''infra <path>' -ForEach @(
         @{ path = 'keys.txt' }, @{ path = 'tofu/dns/terraform.tfstate' }, @{ path = 'tofu/dns/terraform.tfstate.backup' },
         @{ path = 'tofu/dns/prod.tfvars' }, @{ path = 'tofu/dns/terraform.tfvars.json' }, @{ path = 'clusters/home/kubeconfig' },
-        @{ path = 'k3s.yaml' }, @{ path = 'C:/Users/x/.kube/config' }
+        @{ path = 'k3s.yaml' }, @{ path = 'C:/Users/x/.kube/config' }, @{ path = 'C:/Users/x/.kube/home.yaml' },
+        @{ path = 'clusters/home/kubeconfig.yaml' }, @{ path = 'home.kubeconfig' }
     ) { (Invoke-Hook -Data (Tool 'Read' @{ file_path = $path })).Decision | Should -Be 'deny' }
     It 'autorise le fichier d''infra <path>' -ForEach @(
         @{ path = 'tofu/dns/.terraform.lock.hcl' }, @{ path = 'tofu/dns/main.tf' }, @{ path = 'tofu/dns/prod.tfvars.example' },
@@ -749,12 +750,21 @@ Describe 'secret-guard' {
         @{ cmd = 'kubectl --context vps edit secret db' }, @{ cmd = 'tofu output' }, @{ cmd = 'tofu -chdir=tofu/dns output -json' },
         @{ cmd = 'terraform output -raw token' }, @{ cmd = 'tofu show -json dns.tfplan' }, @{ cmd = 'tofu state pull' },
         @{ cmd = 'helm get values app' }, @{ cmd = 'helm get manifest app -n app' }, @{ cmd = 'helm --kube-context home get all app' },
-        @{ cmd = 'cat ~/.kube/config' }, @{ cmd = 'Get-Content tofu/dns/terraform.tfstate' }, @{ cmd = 'bash -c "kubectl get secret db -o yaml"' }
+        @{ cmd = 'cat ~/.kube/config' }, @{ cmd = 'Get-Content tofu/dns/terraform.tfstate' }, @{ cmd = 'bash -c "kubectl get secret db -o yaml"' },
+        @{ cmd = 'kubectl get -n app secret db -o yaml' }, @{ cmd = 'kubectl get --namespace=app secret db -o json' },
+        @{ cmd = 'kubectl get -A secrets -o yaml' }, @{ cmd = "kubectl --context home get -n app secret db -o jsonpath='{.data.password}'" },
+        @{ cmd = 'kubectl edit -n app secret db' }, @{ cmd = "kubectl get secret db --template='{{.data.password}}'" },
+        @{ cmd = 'kubectl get secret db -o template=x' }, @{ cmd = 'kubectl get secret db -o kyaml' },
+        @{ cmd = 'kubectl get secret db -o custom-columns=P:.data.password' }, @{ cmd = 'kubectl config view --flatten' },
+        @{ cmd = 'kubectl config view --minify --flatten' }, @{ cmd = 'tofu show --json' },
+        @{ cmd = 'cat ~/.kube/home.yaml' }, @{ cmd = 'tar czf /tmp/k.tgz ~/.kube' }, @{ cmd = 'unzip -p dns.tfplan tfstate' },
+        @{ cmd = 'tar -xOf dns.tfplan tfstate' }
     ) { (Invoke-Hook -Data (Bash $cmd)).Decision | Should -Be 'deny' }
     It 'autorise la commande d''infra <cmd>' -ForEach @(
         @{ cmd = 'kubectl --context home get pods -o yaml' }, @{ cmd = 'kubectl get secrets' }, @{ cmd = 'kubectl describe secret db' },
         @{ cmd = 'kubectl config view' }, @{ cmd = 'tofu -chdir=tofu/dns plan -out=dns.tfplan' }, @{ cmd = 'tofu show dns.tfplan' },
-        @{ cmd = 'tofu fmt -check -recursive' }, @{ cmd = 'helm get notes app' }, @{ cmd = 'echo "feat(tofu): add the dns output"' }
+        @{ cmd = 'tofu fmt -check -recursive' }, @{ cmd = 'helm get notes app' }, @{ cmd = 'echo "feat(tofu): add the dns output"' },
+        @{ cmd = 'tofu apply dns.tfplan' }, @{ cmd = 'kubectl get -n app pods -o yaml' }
     ) { (Invoke-Hook -Data (Bash $cmd)).Decision | Should -Be 'allow' }
 }
 
@@ -901,6 +911,32 @@ Describe 'pre-commit (gitleaks)' {
         }
         It 'accepte le fichier de règles .sops.yaml' {
             Test-Sops '.sops.yaml' "creation_rules:`n    - path_regex: \.sops\.yaml`$`n      age: age1exemple" | Should -Be 0
+        }
+        It 'refuse une valeur en clair ajoutée après le bloc sops:' {
+            Test-Sops 'secrets/app.sops.yaml' "token: $Enc`n$Meta`nnew_token: abc123" | Should -Not -Be 0
+        }
+        It 'accepte un fichier de plusieurs documents chiffrés' {
+            Test-Sops 'secrets/k8s/multi.sops.yaml' "apiVersion: v1`nkind: Secret`nmetadata:`n    name: a`ndata:`n    p: $Enc`n$Meta`n---`napiVersion: v1`nkind: Secret`nmetadata:`n    name: b`ndata:`n    p: $Enc`n$Meta" | Should -Be 0
+        }
+        It 'refuse un second document laissé en clair' {
+            Test-Sops 'secrets/k8s/multi.sops.yaml' "apiVersion: v1`nkind: Secret`nmetadata:`n    name: a`ndata:`n    p: $Enc`n$Meta`n---`napiVersion: v1`nkind: Secret`nmetadata:`n    name: b`nstringData:`n    password: hunter2" | Should -Not -Be 0
+        }
+        It 'accepte les valeurs vides que SOPS laisse en clair' {
+            Test-Sops 'secrets/empty.sops.yaml' "token: $Enc`nnone: null`ntilde: ~`nblank: `"`"`nmap: {}`nlist: []`n$Meta" | Should -Be 0
+        }
+        It 'refuse un commentaire en clair dans un fichier chiffré en entier' {
+            Test-Sops 'secrets/comment.sops.yaml' "#ENC[AES256_GCM,data:aGk=,iv:aXY=,tag:dGFn,type:comment]`n# ancien jeton : abc123`ntoken: $Enc`n$Meta" | Should -Not -Be 0
+        }
+        It 'refuse kind: Secret sans apiVersion v1 : le fichier reste à chiffrer en entier' {
+            Test-Sops 'secrets/flat.sops.yaml' "kind: Secret`ndata:`n    p: $Enc`ntoken: abc123`n$Meta" | Should -Not -Be 0
+        }
+        It 'refuse un fichier en clair au nom non ASCII' {
+            Test-Sops 'secrets/équipe.sops.yaml' "token: abc123" | Should -Not -Be 0
+        }
+        It 'refuse un plan OpenTofu indexé de force' {
+            Set-Content (Join-Path $script:Repo 'dns.tfplan') 'PK'
+            git -C $script:Repo add -f dns.tfplan
+            Test-PreCommit | Should -Not -Be 0
         }
     }
 }
