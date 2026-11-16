@@ -761,7 +761,11 @@ Describe 'secret-guard' {
         @{ cmd = 'tar -xOf dns.tfplan tfstate' }, @{ cmd = 'tofu plan -show-sensitive' },
         @{ cmd = 'tofu -chdir=tofu/dns state show -show-sensitive x' }, @{ cmd = 'tofu show --show-sensitive' },
         @{ cmd = 'tofu.exe output' }, @{ cmd = 'kubectl get --raw /api/v1/namespaces/app/secrets/db' },
-        @{ cmd = 'ssh vps sudo cat /var/lib/rancher/k3s/server/token' }
+        @{ cmd = 'ssh vps sudo cat /var/lib/rancher/k3s/server/token' }, @{ cmd = 'ssh vps sudo cat /var/lib/rancher/k3s/server/agent-token' },
+        @{ cmd = 'kubectl get "secret/db" -o jsonpath="{.data.password}"' }, @{ cmd = "kubectl get 'secret/db' -o yaml" },
+        @{ cmd = 'kubectl get "secret" db -o yaml' }, @{ cmd = 'kubectl edit -n app "secret/db"' },
+        @{ cmd = 'kubectl get -f ./secrets/db.sops.yaml -o yaml' }, @{ cmd = 'kubectl get -f k8s/app/secret.yaml -o yaml' },
+        @{ cmd = '& "C:\tools\tofu.exe" output -json' }
     ) { (Invoke-Hook -Data (Bash $cmd)).Decision | Should -Be 'deny' }
     It 'autorise la commande d''infra <cmd>' -ForEach @(
         @{ cmd = 'kubectl --context home get pods -o yaml' }, @{ cmd = 'kubectl get secrets' }, @{ cmd = 'kubectl describe secret db' },
@@ -770,7 +774,9 @@ Describe 'secret-guard' {
         @{ cmd = 'tofu apply dns.tfplan' }, @{ cmd = 'kubectl get -n app pods -o yaml' },
         @{ cmd = 'kubectl --context home get pods -n external-secrets -o yaml' }, @{ cmd = 'kubectl get deploy -n sealed-secrets -o yaml' },
         @{ cmd = 'kubectl get pods -o yaml -l app=secret-store' },
-        @{ cmd = "kubectl get pod web -o jsonpath='{.spec.volumes[*].secret.secretName}'" }, @{ cmd = 'kubectl get --raw /healthz' }
+        @{ cmd = "kubectl get pod web -o jsonpath='{.spec.volumes[*].secret.secretName}'" }, @{ cmd = 'kubectl get --raw /healthz' },
+        @{ cmd = 'kubectl get -f k8s/apps/secret-store/deploy.yaml -o yaml' }, @{ cmd = 'kubectl get secretstores -o yaml' },
+        @{ cmd = 'kubectl get events --field-selector involvedObject.kind=Secret -o yaml' }
     ) { (Invoke-Hook -Data (Bash $cmd)).Decision | Should -Be 'allow' }
 }
 
