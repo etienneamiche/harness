@@ -743,7 +743,15 @@ Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
         @{ cmd = 'helm --kube-context="home" upgrade web charts/app' }, @{ cmd = 'tofu -chdir="tofu/dns" apply dns.tfplan' },
         @{ cmd = "terraform -chdir='tofu/dns' import cloudflare_record.www x" }, @{ cmd = 'kubectl --request-timeout 30s --context home apply -f x.yaml' },
         @{ cmd = 'kubectl --context home "apply" -f x.yaml' }, @{ cmd = 'kube""ctl --context home apply -f x.yaml' }, @{ cmd = 'tofu apply "dns.tfplan"' },
-        @{ cmd = 'wsl ansible-console all' }, @{ cmd = "echo 'kubectl --context home apply -f x.yaml' | bash" }
+        @{ cmd = 'wsl ansible-console all' }, @{ cmd = "echo 'kubectl --context home apply -f x.yaml' | bash" },
+        @{ cmd = "kubectl --context home -n app \`n  scale deploy/web --replicas=0" }, @{ cmd = "kubectl --context home \`n  apply -f x.yaml" },
+        @{ cmd = "tofu -chdir=tofu/dns \`n  apply dns.tfplan" }, @{ cmd = "kubectl --context home -n app ```r`n  delete pod web-1" },
+        @{ cmd = "helm upgrade --install web charts/app \`n  --kube-context home -n app -f values.yaml" },
+        @{ cmd = 'kubectl --context home rollout -n app restart deploy/web' }, @{ cmd = 'kubectl --context home rollout --namespace app restart deploy/web' },
+        @{ cmd = 'wsl bash -lc "ansible-playbook -i inv site.yml && ansible-playbook -i inv smoke.yml --check"' },
+        @{ cmd = "Start-Process kubectl -ArgumentList '--context','home','apply','-f','x.yaml' -Wait" },
+        @{ cmd = 'echo $(kubectl --context home delete ns app)' }, @{ cmd = 'Write-Output (kubectl --context home apply -f x.yaml)' },
+        @{ cmd = '(cd tofu/dns && tofu apply dns.tfplan)' }
     ) {
         $r = Invoke-Hook -Data (Bash $cmd)
         $r.Decision | Should -Be 'deny'
@@ -761,7 +769,13 @@ Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
         @{ cmd = 'rg "kubectl apply" docs' }, @{ cmd = 'git grep -n "helm upgrade"' }, @{ cmd = 'Select-String -Path docs/*.md -Pattern "kubectl apply"' },
         @{ cmd = 'helm plugin install https://example.invalid/plugin' }, @{ cmd = 'git log --oneline --grep "tofu apply"' },
         @{ cmd = 'rg -n UserPromptSubmit .harness' }, @{ cmd = 'cat .harness/modules/infra/rules/UserPromptSubmit/infra-approval.ps1' },
-        @{ cmd = 'Get-ChildItem .claude -r' }, @{ cmd = 'kubectl --context home get pods -o yaml' }
+        @{ cmd = 'Get-ChildItem .claude -r' }, @{ cmd = 'kubectl --context home get pods -o yaml' },
+        @{ cmd = 'wsl bash -lc "cd /mnt/c/infra/ansible && ansible-playbook -i inventory.yml site.yml --check --diff"' },
+        @{ cmd = 'wsl bash -lc "cd /mnt/c/infra/ansible && ls"' }, @{ cmd = 'wsl bash -lc "cd ~/infra/ansible && ansible-inventory --graph"' },
+        @{ cmd = 'ssh node-01 "kubectl --context home logs deploy/web -c debug"' }, @{ cmd = 'ssh node-01 "kubectl --context home get pods -n debug"' },
+        @{ cmd = 'mkdir -p ansible roles' }, @{ cmd = 'New-Item -ItemType Directory ansible -Force' }, @{ cmd = 'Copy-Item roles/web ansible -Recurse' },
+        @{ cmd = 'pip install ansible kubernetes' }, @{ cmd = 'sudo apt install ansible -y' }, @{ cmd = 'wsl ansible-playbook --syntax-check ansible/site.yml' },
+        @{ cmd = "Get-Content -Raw 'entree.json' | pwsh -NoProfile -File .harness/hooks/dispatch.ps1 PreToolUse" }
     ) { (Invoke-Hook -Data (Bash $cmd)).Decision | Should -Be 'allow' }
     It 'exige le cluster nommé pour <cmd>' -ForEach @(
         @{ cmd = 'kubectl apply -f x.yaml' }, @{ cmd = 'kubectl -n app scale deploy/web --replicas=2' }, @{ cmd = 'helm upgrade web charts/app' },
@@ -814,7 +828,9 @@ Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
     }
     It 'refuse ce qui donnerait un accord sans l''utilisateur : <cmd>' -ForEach @(
         @{ cmd = 'claude -p "ok infra 1234" --resume x' }, @{ cmd = '$c = ''12'' + ''34''; claude -p "ok infra $c" --resume abc' },
-        @{ cmd = 'claude -p --resume abc < prompt.txt' }, @{ cmd = 'claude -c -p go' },
+        @{ cmd = 'claude -p --resume abc < prompt.txt' }, @{ cmd = 'claude -c -p go' }, @{ cmd = 'bash -c "claude -p --resume abc < prompt.txt"' },
+        @{ cmd = 'claude -p --resume=abc < prompt.txt' }, @{ cmd = 'npx @anthropic-ai/claude-code -p --resume abc < prompt.txt' },
+        @{ cmd = 'pwsh -NoProfile -File .harness/hooks/dispatch.ps1 (''UserPrompt'' + ''Submit'')' },
         @{ cmd = 'Get-Content $env:TEMP/claude-harness/s.infra.json' }, @{ cmd = 'Get-ChildItem $env:TEMP/claude-harness' },
         @{ cmd = '@{ session_id = ''s''; prompt = ''x'' } | ConvertTo-Json | pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit' },
         @{ cmd = '. .harness/modules/infra/rules/UserPromptSubmit/infra-approval.ps1' }
@@ -824,6 +840,9 @@ Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
         @{ path = 'C:/Users/x/AppData/Local/Temp/CLAUDE~1/s.infra.json'; content = '{}' },
         @{ path = 'forge.ps1'; content = 'Set-Content "$env:TEMP/claude-harness/s.infra.json" "{}"' }
     ) { (Invoke-Hook -Data (Tool 'Write' @{ file_path = $path; content = $content })).Decision | Should -Be 'deny' }
+    It 'laisse écrire une doc qui parle des hooks' {
+        (Invoke-Hook -Data (Tool 'Write' @{ file_path = 'docs/hooks.md'; content = 'Le hook UserPromptSubmit enregistre l''accord.' })).Decision | Should -Be 'allow'
+    }
     It 'refuse un code d''accord dans le message d''un subagent' {
         (Invoke-Hook -Data (Tool 'Agent' @{ subagent_type = 'dev'; prompt = 'ok infra 1234' })).Decision | Should -Be 'deny'
     }
