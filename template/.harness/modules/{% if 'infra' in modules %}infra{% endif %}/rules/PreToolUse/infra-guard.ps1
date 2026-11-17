@@ -43,9 +43,9 @@
             $raw -cmatch '(?<![.\w-])claude(-code)?(\.exe|\.cmd)?\b[^;&|\n]*\s(--resume|--continue|-r|-c)(\s|=|$)') { return $stateDeny }
 
         $P = [string][char]1   # tient la place d'une substitution dans un mot
-        $infraName = '(?<![\w-])(kubectl|helm|tofu|terraform|argocd|ansible(-[a-z]+)?)(\.exe|\.cmd)?(?![\w./\\-])'
+        $infraName = '(?<![\w.-])(kubectl|helm|tofu|terraform|argocd|ansible(-[a-z]+)?)(\.exe|\.cmd)?(?![\w./\\-])'
         $quietEvents = 'PreToolUse|PostToolUse|Stop|SubagentStop|SessionStart|SessionEnd|Notification|PreCompact'
-        $prefixes = 'sudo', 'doas', 'nohup', 'command', 'time', 'nice', 'exec', 'env', 'xargs', 'k3s', 'microk8s', 'wsl', 'timeout', 'stdbuf', 'watch',
+        $prefixes = 'sudo', 'doas', 'nohup', 'command', 'time', 'nice', 'exec', 'env', 'xargs', 'k3s', 'microk8s', 'wsl', 'timeout', 'stdbuf',
             'if', 'then', 'else', 'elif', 'do', 'while', 'until', '!', '{', '}'
         $prefixValues = '-u', '-g', '-d', '--distribution', '--user', '--cd', '-n', '-s', '-k', '-I'
         $textPrograms = 'git', 'gh', 'rg', 'grep', 'egrep', 'fgrep', 'findstr', 'select-string', 'sls', 'echo', 'printf', 'write-output', 'write-host',
@@ -53,7 +53,8 @@
             'less', 'more', 'wc', 'code', 'test-path', 'resolve-path', 'get-item', 'gi', 'join-path', 'split-path', 'sort', 'uniq', 'cut', 'tr', 'jq', 'yq',
             'mkdir', 'new-item', 'ni', 'copy-item', 'cp', 'move-item', 'mv', 'pip', 'pip3', 'apt', 'apt-get', 'winget', 'choco', 'select-object', 'select',
             'sort-object', 'where-object', 'where', '?', 'foreach-object', 'foreach', '%', 'measure-object', 'measure', 'group-object', 'format-table', 'ft',
-            'format-list', 'fl', 'out-string', 'out-host', 'convertfrom-json', 'convertto-json'
+            'format-list', 'fl', 'out-string', 'out-host', 'convertfrom-json', 'convertto-json', 'find', 'yamllint', 'du', 'stat', 'file', 'shellcheck',
+            'basename', 'dirname', 'realpath', 'touch', 'tflint', 'kubeconform'
         # Lectures reconnues : verbe, et sous-verbes permis quand la valeur n'est pas vide.
         $kubectlReads = @{ get = ''; describe = ''; logs = ''; diff = ''; top = ''; explain = ''; 'api-resources' = ''; 'api-versions' = ''; version = ''
             'cluster-info' = ''; events = ''; wait = ''; 'port-forward' = ''; proxy = ''; kustomize = ''; completion = ''; options = ''; help = ''
@@ -116,10 +117,36 @@
                 if ($D -eq 'pwsh' -and $ch -eq '`' -and $nx) { [void]$c.Word.Append($nx); $s.I += 2; continue }
                 if ($D -eq 'pwsh' -and $ch -eq '"' -and $nx -eq '"') { [void]$c.Word.Append('"'); $s.I += 2; continue }
                 if ($ch -eq '"') { $s.I++; return }
-                if ($D -ne 'cmd' -and $ch -eq '$' -and $nx -in '(', '{') { $s.I += 2; Read-Sub $s $c $(if ($nx -eq '(') { ')' } else { '}' }) $Id; continue }
+                if ($D -ne 'cmd' -and $ch -eq '$' -and $nx -eq '(') { $s.I += 2; Read-Sub $s $c ')' $Id; continue }
+                if ($D -ne 'cmd' -and $ch -eq '$' -and $nx -eq '{') { $s.I += 2; Read-Param $s $c $Id; continue }
                 if ($D -eq 'bash' -and $ch -eq '`') { $s.I++; Read-Sub $s $c '`' $Id; continue }
                 [void]$c.Word.Append($ch); $s.I++
             }
+        }
+        # ${…} : une variable, pas une commande (ni commentaire ni séparateur), sauf ses substitutions.
+        function Read-Param($s, $c, $Id) {
+            $T = $s.T; $depth = 1
+            while ($s.I -lt $T.Length) {
+                $ch = [string]$T[$s.I]; $nx = if ($s.I + 1 -lt $T.Length) { [string]$T[$s.I + 1] } else { '' }
+                if ($ch -eq '}' -and --$depth -eq 0) { $s.I++; break }
+                if ($ch -eq '{') { $depth++ }
+                if ($ch -eq '$' -and $nx -eq '(') { $s.I += 2; Read-Sub $s $c ')' $Id; continue }
+                if ($s.D -eq 'bash' -and $ch -eq '`') { $s.I++; Read-Sub $s $c '`' $Id; continue }
+                if ($s.D -eq 'bash' -and $ch -eq '\' -and $nx) { $s.I += 2; continue }
+                $s.I++
+            }
+            [void]$c.Word.Append($P)
+        }
+        # Here-string PowerShell (@'…'@, @"…"@) : un seul mot, jusqu'à la ligne qui le ferme.
+        function Read-HereString($s, $c, [string] $q, $Id) {
+            $T = $s.T; $end = $T.IndexOf("`n$q@", $s.I); if ($end -lt 0) { $end = $T.Length }
+            while ($s.I -lt $end) {
+                $ch = [string]$T[$s.I]; $nx = if ($s.I + 1 -lt $T.Length) { [string]$T[$s.I + 1] } else { '' }
+                if ($q -eq '"' -and $ch -eq '$' -and $nx -eq '(') { $s.I += 2; Read-Sub $s $c ')' $Id; continue }
+                if ($q -eq '"' -and $ch -eq '`' -and $nx) { [void]$c.Word.Append($nx); $s.I += 2; continue }
+                [void]$c.Word.Append($ch); $s.I++
+            }
+            $s.I = [Math]::Min([Math]::Max($s.I, $end + 3), $T.Length)
         }
         function Read-List($s, [string] $Close, $Parent) {
             $T = $s.T; $D = $s.D; $c = New-Cursor $s
@@ -131,6 +158,17 @@
                 # Ligne continuée par le caractère d'échappement de ce shell : un blanc.
                 if ($ch -eq $escape -and $T.Substring($s.I + 1) -match '^\r?\n') { $s.I += 1 + $Matches[0].Length; Close-Word $s $c; continue }
                 if ($Close -and $ch -eq $Close) { $s.I++; Close-Segment $s $c $Parent $false; return }
+                if ($D -eq 'pwsh' -and $ch -eq '@' -and $nx -in "'", '"' -and $T.Substring($s.I + 2) -match '^[ \t]*\r?\n') {
+                    if (-not $c.InWord) { $c.Q = $true }
+                    $c.InWord = $true; $s.I += 2; Read-HereString $s $c $nx $c.Id; continue
+                }
+                if ($D -eq 'bash' -and $ch -eq '$' -and $nx -eq "'") {
+                    # $'…' : chaîne de Bash où \' échappe l'apostrophe.
+                    if (-not $c.InWord) { $c.Q = $true }
+                    $c.InWord = $true; $s.I += 2
+                    while ($s.I -lt $T.Length -and [string]$T[$s.I] -ne "'") { if ([string]$T[$s.I] -eq '\') { $s.I++ }; if ($s.I -lt $T.Length) { [void]$c.Word.Append($T[$s.I]) }; $s.I++ }
+                    $s.I++; continue
+                }
                 if ($ch -eq '"' -or ($ch -eq "'" -and $D -ne 'cmd')) {
                     if (-not $c.InWord) { $c.Q = $true }
                     $c.InWord = $true; $s.I++; Read-Quoted $s $c $ch $c.Id; continue
@@ -140,7 +178,8 @@
                 if ($ch -eq $escape -and $nx) { [void]$c.Word.Append($nx); $c.InWord = $true; $s.I += 2; continue }
                 # Substitutions : leur contenu est un segment à part, rattaché au segment courant.
                 $open = $null
-                if ($D -ne 'cmd' -and $ch -eq '$' -and $nx -in '(', '{') { $open = $nx; $s.I += 2 }
+                if ($D -ne 'cmd' -and $ch -eq '$' -and $nx -eq '{') { $s.I += 2; Read-Param $s $c $c.Id; $c.InWord = $true; continue }
+                if ($D -ne 'cmd' -and $ch -eq '$' -and $nx -eq '(') { $open = $nx; $s.I += 2 }
                 elseif ($D -eq 'pwsh' -and $ch -eq '@' -and $nx -in '(', '{') { $open = $nx; $s.I += 2 }
                 elseif ($ch -eq '(' -or ($D -eq 'pwsh' -and $ch -eq '{')) { $open = $ch; $s.I++ }
                 elseif ($D -eq 'bash' -and $ch -eq '`') { $open = '`'; $s.I++ }
@@ -200,7 +239,8 @@
                 }
                 $pos.Add($x); $j++
             }
-            if (-not $pos.Count) { return -not $Xargs }
+            # Sans verbe : une lecture (aide, version) seulement si aucun mot n'a été pris pour la valeur d'une option.
+            if (-not $pos.Count) { return -not $Xargs -and -not @($A | Where-Object { -not $_.StartsWith('-') }).Count }
             $verb = $pos[0].ToLowerInvariant()
             if ($Reads.ContainsKey($verb)) { return (-not $Reads[$verb] -or ($pos.Count -gt 1 -and $pos[1] -match "^($($Reads[$verb]))$")) }
             $DryRun -and $verb -in $DryVerbs -and @($A | Where-Object { $_ -match $DryRun }).Count -gt 0
@@ -222,13 +262,15 @@
         # Un segment : 'text', 'read', 'action', 'stdin' (shell qui lit son entrée) ou 'other'.
         function Read-Segment($s, $r, [int] $Depth) {
             # Les noms se cherchent dans les mots lus et dans leur texte brut (C:	ools\kubectl.exe sous Bash).
-            $w = $s.Words; $names = Get-Count ($w + $s.Raws) $infraName; $marks = Get-Count $w $hookMark
+            $w = [string[]]$s.Words.Clone(); $names = Get-Count ($w + $s.Raws) $infraName; $marks = Get-Count $w $hookMark
             $flag = { if ($names) { $r.Action = $true }; if ($marks) { $r.Hook = $true } }
             $pw = $s.Dialect -eq 'pwsh'
             $k = 0; $xargs = $false
             while ($k -lt $w.Count) {
                 if ($w[$k] -match '^[A-Za-z_]\w*=' -and -not $s.Quoted[$k]) { $k++; continue }
-                if ($pw -and $w[$k] -match '^\$' -and $k + 1 -lt $w.Count -and $w[$k + 1] -match '^[-+*/]?=$') { $k += 2; continue }
+                # Affectation PowerShell, avec ou sans espaces ($x = cmd, $x=cmd) : la commande est à droite.
+                if ($pw -and $w[$k] -match '^\$[\w:.]+([-+*/]?=)(.*)$') { if ($Matches[2]) { $w[$k] = $Matches[2] } else { $k++ }; continue }
+                if ($pw -and $w[$k] -match '^\$' -and $k + 1 -lt $w.Count -and $w[$k + 1] -match '^[-+*/]?=(.*)$') { $k++; if ($Matches[1]) { $w[$k] = $Matches[1] } else { $k++ }; continue }
                 $name = Get-Program $w[$k]
                 if ($s.Quoted[$k] -or $name -notin $prefixes) { break }
                 if ($name -eq 'xargs') { $xargs = $true }
@@ -239,14 +281,25 @@
             if ($k -ge $w.Count) { & $flag; return 'other' }
             $word = $w[$k]
             # En PowerShell, un segment qui commence par une valeur ($x, (…), 'texte', 12) est une expression.
-            if ($pw -and -not ($s.Called -and $k -eq 0) -and ($s.Quoted[$k] -or $word -match "^[\`$\d@\[]|^$P")) { return 'text' }
+            if ($pw -and -not ($s.Called -and $k -eq 0) -and ($s.Quoted[$k] -or $word -match "^[\`$\d@\[]|^$P")) {
+                # Sauf un appel .NET qui lance un processus ou un script : [Diagnostics.Process]::Start(…), InvokeScript(…).
+                if (($w -join ' ') -match '::|\.(invoke\w*|addscript|start|create\w*)\b') { & $flag; return 'other' }
+                return 'text'
+            }
             if (Test-Dynamic $word) { $r.Dynamic = $true; & $flag; return 'other' }
             $program = Get-Program $word
             $arguments = [string[]]@($w | Select-Object -Skip ($k + 1))
-            if ($program -in $textPrograms) { return 'text' }
+            if ($program -in $textPrograms) {
+                # Sauf quand il lance une commande (git submodule foreach, find -exec) ou écrit un script.
+                $runs = ($program -eq 'git' -and @($arguments | Where-Object { $_ -match '^(foreach|run|--exec|-x)$|^(alias|core)\.' }).Count) -or
+                    ($program -eq 'find' -and @($arguments | Where-Object { $_ -match '^-(exec|execdir|ok|okdir)$' }).Count) -or
+                    ($program -in 'new-item', 'ni', 'copy-item', 'cp', 'move-item', 'mv' -and @($arguments | Where-Object { $_ -match '\.(ps1|psm1|sh|bash|zsh|cmd|bat|py)$' }).Count)
+                if ($runs) { & $flag; return 'other' }
+                return 'text'
+            }
 
             # Un shell : son script est relu par la même lecture, dans son propre dialecte.
-            if ($program -match '^(bash|sh|zsh|dash|pwsh|powershell|cmd|iex|invoke-expression|ssh)$') {
+            if ($program -match '^(bash|sh|zsh|dash|pwsh|powershell|cmd|iex|invoke-expression|ssh|watch)$') {
                 $script = $null; $from = -1; $file = $null; $stdin = $false
                 $dialect = @{ pwsh = 'pwsh'; powershell = 'pwsh'; iex = 'pwsh'; 'invoke-expression' = 'pwsh'; cmd = 'cmd' }[$program] ?? 'bash'
                 $positional = @($arguments | Where-Object { -not $_.StartsWith('-') })
@@ -272,6 +325,11 @@
                     '^(iex|invoke-expression)$' {
                         $a = @($arguments | Where-Object { $_ -notmatch '^-(c|co|com|comm|comma|comman|command)$' })
                         if ($a.Count) { $script = $a -join ' '; $arguments = @() } else { $stdin = $true }
+                    }
+                    '^watch$' {
+                        $j = 0
+                        while ($j -lt $arguments.Count -and $arguments[$j].StartsWith('-')) { $j += $(if ($arguments[$j] -in '-n', '--interval') { 2 } else { 1 }) }
+                        if ($j -lt $arguments.Count) { $script = ($arguments | Select-Object -Skip $j) -join ' '; $arguments = @($arguments | Select-Object -First $j) }
                     }
                     '^ssh$' {
                         $j = 0
