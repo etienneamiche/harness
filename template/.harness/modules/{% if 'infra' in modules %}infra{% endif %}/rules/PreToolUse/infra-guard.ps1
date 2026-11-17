@@ -43,7 +43,7 @@
             $raw -cmatch '(?<![.\w-])claude(-code)?(\.exe|\.cmd)?\b[^;&|\n]*\s(--resume|--continue|-r|-c)(\s|=|$)') { return $stateDeny }
 
         $P = [string][char]1   # tient la place d'une substitution dans un mot
-        $infraName = '(?<![\w.-])(kubectl|helm|tofu|terraform|argocd|ansible(-[a-z]+)?)(\.exe|\.cmd)?(?![\w./\\-])'
+        $infraName = '(?<![\w-]|(?<!microk8s)\.)(kubectl|helm|tofu|terraform|argocd|ansible(-[a-z]+)?)(\.exe|\.cmd)?(?![\w./\\-])'
         $quietEvents = 'PreToolUse|PostToolUse|Stop|SubagentStop|SessionStart|SessionEnd|Notification|PreCompact'
         $prefixes = 'sudo', 'doas', 'nohup', 'command', 'time', 'nice', 'exec', 'env', 'xargs', 'k3s', 'microk8s', 'wsl', 'timeout', 'stdbuf',
             'if', 'then', 'else', 'elif', 'do', 'while', 'until', '!', '{', '}'
@@ -53,7 +53,7 @@
             'less', 'more', 'wc', 'code', 'test-path', 'resolve-path', 'get-item', 'gi', 'join-path', 'split-path', 'sort', 'uniq', 'cut', 'tr', 'jq', 'yq',
             'mkdir', 'new-item', 'ni', 'copy-item', 'cp', 'move-item', 'mv', 'pip', 'pip3', 'apt', 'apt-get', 'winget', 'choco', 'select-object', 'select',
             'sort-object', 'where-object', 'where', '?', 'foreach-object', 'foreach', '%', 'measure-object', 'measure', 'group-object', 'format-table', 'ft',
-            'format-list', 'fl', 'out-string', 'out-host', 'convertfrom-json', 'convertto-json', 'find', 'yamllint', 'du', 'stat', 'file', 'shellcheck',
+            'format-list', 'fl', 'out-string', 'out-host', 'convertfrom-json', 'convertto-json', 'write-warning', 'write-error', 'write-verbose', 'write-debug', 'write-information', 'find', 'yamllint', 'du', 'stat', 'file', 'shellcheck',
             'basename', 'dirname', 'realpath', 'touch', 'tflint', 'kubeconform'
         # Lectures reconnues : verbe, et sous-verbes permis quand la valeur n'est pas vide.
         $kubectlReads = @{ get = ''; describe = ''; logs = ''; diff = ''; top = ''; explain = ''; 'api-resources' = ''; 'api-versions' = ''; version = ''
@@ -82,9 +82,11 @@
             if (-not $c.InWord) { return }
             $w = $c.Word.ToString(); $c.Words.Add($w); $c.Quoted.Add($c.Q); $c.Raws.Add((Get-Raw $s $c)); [void]$c.Word.Clear(); $c.InWord = $false; $c.Q = $false
             if ($s.D -ne 'bash') { return }
+            # Un heredoc s'ouvre par un << hors des guillemets ('<<EOF' n'en est pas un).
+            $raw = $c.Raws[$c.Raws.Count - 1]
             if ($c.Wait) { $s.Heredocs.Add(@{ Tag = $w; Strip = $c.Wait -eq '<<-' }); $c.Wait = $null }
-            elseif ($w -match '^<<-?$') { $c.Wait = $w }
-            elseif ($w -match '^(<<-?)(\w+)$') { $s.Heredocs.Add(@{ Tag = $Matches[2]; Strip = $Matches[1] -eq '<<-' }) }
+            elseif ($raw -match '^<<-?$') { $c.Wait = $raw }
+            elseif ($raw -match '^<<' -and $w -match '^(<<-?)(\w+)$') { $s.Heredocs.Add(@{ Tag = $Matches[2]; Strip = $Matches[1] -eq '<<-' }) }
         }
         # Texte brut d'un mot, sans le contenu de ses substitutions (lues à part).
         function Get-Raw($s, $c) {
@@ -129,7 +131,7 @@
             while ($s.I -lt $T.Length) {
                 $ch = [string]$T[$s.I]; $nx = if ($s.I + 1 -lt $T.Length) { [string]$T[$s.I + 1] } else { '' }
                 if ($ch -eq '}' -and --$depth -eq 0) { $s.I++; break }
-                if ($ch -eq '{') { $depth++ }
+                if ($ch -eq '$' -and $nx -eq '{') { $depth++; $s.I += 2; continue }
                 if ($ch -eq '$' -and $nx -eq '(') { $s.I += 2; Read-Sub $s $c ')' $Id; continue }
                 if ($s.D -eq 'bash' -and $ch -eq '`') { $s.I++; Read-Sub $s $c '`' $Id; continue }
                 if ($s.D -eq 'bash' -and $ch -eq '\' -and $nx) { $s.I += 2; continue }
@@ -229,6 +231,7 @@
         # Lecture reconnue d'un programme cobra : le verbe (et son sous-verbe) est dans la table.
         function Test-CobraRead([string[]] $A, [string[]] $Flags, [hashtable] $Reads, [string[]] $DryVerbs, [string] $DryRun, [bool] $Xargs) {
             $A = Get-BeforeDash $A
+            if (-not $A) { return -not $Xargs }
             if (@($A | Where-Object { $_ -in '-h', '--help' }).Count) { return $true }
             $pos = [Collections.Generic.List[string]]::new(); $j = 0
             while ($j -lt $A.Count) {
@@ -248,6 +251,7 @@
         # Le cluster est nommé en clair : ni variable, ni substitution.
         function Test-Named([string[]] $A, [string] $Option) {
             $A = Get-BeforeDash $A
+            if (-not $A) { return $false }
             for ($j = 0; $j -lt $A.Count; $j++) {
                 $v = if ($A[$j] -like "$Option=*") { $A[$j].Substring($Option.Length + 1) } elseif ($A[$j] -eq $Option -and $j + 1 -lt $A.Count) { $A[$j + 1] } else { continue }
                 if ($v.Trim() -and -not (Test-Dynamic $v)) { return $true }
@@ -261,16 +265,28 @@
 
         # Un segment : 'text', 'read', 'action', 'stdin' (shell qui lit son entrée) ou 'other'.
         function Read-Segment($s, $r, [int] $Depth) {
-            # Les noms se cherchent dans les mots lus et dans leur texte brut (C:	ools\kubectl.exe sous Bash).
+            # Les noms se cherchent dans les mots lus et dans leur texte brut (C:\tools\kubectl.exe sous Bash).
             $w = [string[]]$s.Words.Clone(); $names = Get-Count ($w + $s.Raws) $infraName; $marks = Get-Count $w $hookMark
             $flag = { if ($names) { $r.Action = $true }; if ($marks) { $r.Hook = $true } }
             $pw = $s.Dialect -eq 'pwsh'
             $k = 0; $xargs = $false
             while ($k -lt $w.Count) {
                 if ($w[$k] -match '^[A-Za-z_]\w*=' -and -not $s.Quoted[$k]) { $k++; continue }
-                # Affectation PowerShell, avec ou sans espaces ($x = cmd, $x=cmd) : la commande est à droite.
-                if ($pw -and $w[$k] -match '^\$[\w:.]+([-+*/]?=)(.*)$') { if ($Matches[2]) { $w[$k] = $Matches[2] } else { $k++ }; continue }
-                if ($pw -and $w[$k] -match '^\$' -and $k + 1 -lt $w.Count -and $w[$k + 1] -match '^[-+*/]?=(.*)$') { $k++; if ($Matches[1]) { $w[$k] = $Matches[1] } else { $k++ }; continue }
+                # Affectation PowerShell ($x = cmd, $x=cmd, [string]$x = cmd, $a[0]=cmd, ${x} = cmd, $x ??= cmd) : la commande
+                # est à droite, sauf une valeur entre guillemets.
+                if ($pw) {
+                    $lhs = "^(\[[\w.,\[\] ]*\])*(\`$[\w:.]*|$P)(\[[^\]]*\]|\.\w+)*"; $op = '([-+*/%]|\?\?)?='
+                    if ($w[$k] -match "$lhs$op(?<rest>.*)$") {
+                        if ($s.Raws[$k] -match "=\s*['`"@]") { return 'text' }
+                        if ($Matches.rest) { $w[$k] = $Matches.rest } else { $k++ }
+                        continue
+                    }
+                    if ($w[$k] -match "$lhs`$" -and $k + 1 -lt $w.Count -and $w[$k + 1] -match "^$op(?<rest>.*)$") {
+                        $k++
+                        if ($Matches.rest) { if ($s.Raws[$k] -match "=\s*['`"@]") { return 'text' }; $w[$k] = $Matches.rest } else { $k++ }
+                        continue
+                    }
+                }
                 $name = Get-Program $w[$k]
                 if ($s.Quoted[$k] -or $name -notin $prefixes) { break }
                 if ($name -eq 'xargs') { $xargs = $true }
@@ -283,18 +299,38 @@
             # En PowerShell, un segment qui commence par une valeur ($x, (…), 'texte', 12) est une expression.
             if ($pw -and -not ($s.Called -and $k -eq 0) -and ($s.Quoted[$k] -or $word -match "^[\`$\d@\[]|^$P")) {
                 # Sauf un appel .NET qui lance un processus ou un script : [Diagnostics.Process]::Start(…), InvokeScript(…).
-                if (($w -join ' ') -match '::|\.(invoke\w*|addscript|start|create\w*)\b') { & $flag; return 'other' }
+                if (($w -join ' ') -match '::(start|create\w*|invoke\w*)\b|\.(invoke\w*|addscript|start)\b') { & $flag; return 'other' }
                 return 'text'
             }
             if (Test-Dynamic $word) { $r.Dynamic = $true; & $flag; return 'other' }
             $program = Get-Program $word
             $arguments = [string[]]@($w | Select-Object -Skip ($k + 1))
             if ($program -in $textPrograms) {
-                # Sauf quand il lance une commande (git submodule foreach, find -exec) ou écrit un script.
-                $runs = ($program -eq 'git' -and @($arguments | Where-Object { $_ -match '^(foreach|run|--exec|-x)$|^(alias|core)\.' }).Count) -or
-                    ($program -eq 'find' -and @($arguments | Where-Object { $_ -match '^-(exec|execdir|ok|okdir)$' }).Count) -or
-                    ($program -in 'new-item', 'ni', 'copy-item', 'cp', 'move-item', 'mv' -and @($arguments | Where-Object { $_ -match '\.(ps1|psm1|sh|bash|zsh|cmd|bat|py)$' }).Count)
-                if ($runs) { & $flag; return 'other' }
+                # Sauf la commande qu'il lance (find -exec, git submodule foreach, git rebase --exec, un alias git),
+                # relue comme un script Bash, et un script qu'il écrit (New-Item x.ps1 -Value …).
+                $scripts = [Collections.Generic.List[string]]::new()
+                for ($j = 0; $j -lt $arguments.Count; $j++) {
+                    $x = $arguments[$j]; $before = if ($j) { $arguments[$j - 1] } else { '' }
+                    if ($program -eq 'find' -and $x -match '^-(exec|execdir|ok|okdir)$') {
+                        $e = $j + 1; while ($e -lt $arguments.Count -and $arguments[$e] -notin ';', '+') { $e++ }
+                        if ($e -gt $j + 1) { $scripts.Add((@($arguments[($j + 1)..($e - 1)]) -join ' ')) }
+                        $j = $e
+                    }
+                    elseif ($program -eq 'git') {
+                        if (($x -eq 'foreach' -and $before -eq 'submodule') -or ($x -eq 'run' -and $before -eq 'bisect')) {
+                            $scripts.Add((@($arguments | Select-Object -Skip ($j + 1) | Where-Object { $_ -notmatch '^--?(recursive|quiet|q)$' }) -join ' ')); break
+                        }
+                        if ($x -in '--exec', '-x' -and $j + 1 -lt $arguments.Count) { $scripts.Add($arguments[$j + 1]); $j++ }
+                        elseif ($x -match '^--exec=(.*)$') { $scripts.Add($Matches[1]) }
+                        elseif ($x -match '^(alias\.[^=]+|core\.(sshcommand|pager|editor|fsmonitor))=!?(.*)$') { $scripts.Add($Matches[3]) }
+                    }
+                }
+                foreach ($sc in $scripts) {
+                    if ($Depth -ge 4) { $r.Action = $true; continue }
+                    $sub = Read-Command $sc 'bash' ($Depth + 1)
+                    foreach ($key in @($r.Keys)) { $r[$key] = $r[$key] -or $sub[$key] }
+                }
+                if ($program -in 'new-item', 'ni', 'copy-item', 'cp', 'move-item', 'mv' -and @($arguments | Where-Object { $_ -match '\.(ps1|psm1|sh|bash|zsh|cmd|bat|py)$' }).Count) { & $flag; return 'other' }
                 return 'text'
             }
 

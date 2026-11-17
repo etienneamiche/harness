@@ -758,7 +758,10 @@ Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
         @{ cmd = "cat <<EOF | bash`nkubectl --context home apply -f x.yaml`nEOF" }, @{ cmd = "echo 'kubectl --context home apply -f x.yaml' > run.sh" },
         @{ cmd = 'C:\tools\kubectl.exe --context home apply -f x.yaml' },
         @{ cmd = 'echo "${#PODS[@]} pods"; kubectl --context home delete pod web-1' }, @{ cmd = "echo $'it\'s'; kubectl --context home apply -f x.yaml" },
-        @{ cmd = "git submodule foreach 'kubectl --context home apply -f x.yaml'" }, @{ cmd = 'kubectl --context home --alsologtostderr apply -f x.yaml' }
+        @{ cmd = "git submodule foreach 'kubectl --context home apply -f x.yaml'" }, @{ cmd = 'kubectl --context home --alsologtostderr apply -f x.yaml' },
+        @{ cmd = "rg -n '<<EOF' scripts/`nkubectl --context home apply -f x.yaml" }, @{ cmd = "grep -n '<<' deploy.sh`nkubectl --context home apply -f x.yaml" },
+        @{ cmd = "git rebase --exec='kubectl --context home apply -f x.yaml' HEAD~1" }, @{ cmd = 'echo ${x:-{}; kubectl --context home apply -f x.yaml' },
+        @{ cmd = "python3 -c `"import os; os.system('microk8s.kubectl apply -f x.yaml')`"" }
     ) {
         $r = Invoke-Hook -Data (Bash $cmd)
         $r.Decision | Should -Be 'deny'
@@ -776,7 +779,11 @@ Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
         @{ cmd = '$k = ''kubectl''; & $k --context home apply -f x.yaml' },
         @{ cmd = "`$m = @'`nit's`n'@`nkubectl --context home apply -f x.yaml" },
         @{ cmd = '$r=kubectl --context home apply -f x.yaml' }, @{ cmd = "[Diagnostics.Process]::Start('kubectl', '--context home apply -f x.yaml')" },
-        @{ cmd = "New-Item run.ps1 -Value 'kubectl --context home apply -f x.yaml'" }
+        @{ cmd = "New-Item run.ps1 -Value 'kubectl --context home apply -f x.yaml'" },
+        @{ cmd = '[string]$out = kubectl --context home apply -f x.yaml' }, @{ cmd = '[string[]]$lines = helm --kube-context home upgrade web charts/app' },
+        @{ cmd = '$a[0]=kubectl --context home apply -f x.yaml' }, @{ cmd = '$h[''web'']=kubectl --context home apply -f x.yaml' },
+        @{ cmd = '$x ??= kubectl --context home apply -f x.yaml' }, @{ cmd = '${out} = kubectl --context home apply -f x.yaml' },
+        @{ cmd = "Start-Process microk8s.kubectl -ArgumentList 'apply','-f','x.yaml'" }
     ) {
         $r = Invoke-Hook -Data (PowerShell $cmd)
         $r.Decision | Should -Be 'deny'
@@ -813,7 +820,8 @@ Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
         @{ cmd = "echo 'kubectl --context home apply -f x.yaml' >> docs/runbook.md" },
         @{ cmd = 'helm --kube-context home upgrade web charts/app --set tag=$(git rev-parse HEAD) --dry-run' },
         @{ cmd = "find tofu -name '*.tf'" }, @{ cmd = 'yamllint ansible' }, @{ cmd = 'du -sh tofu/dns/.terraform' },
-        @{ cmd = "watch -n 5 'kubectl --context home get pods'" }, @{ cmd = 'echo "${#PODS[@]} pods"' }
+        @{ cmd = "watch -n 5 'kubectl --context home get pods'" }, @{ cmd = 'echo "${#PODS[@]} pods"' },
+        @{ cmd = "find tofu -name '*.tf' -exec grep -l helm {} +" }, @{ cmd = 'kubectl' }, @{ cmd = 'helm' }
     ) { (Invoke-Hook -Data (Bash $cmd)).Decision | Should -Be 'allow' }
     It 'laisse passer la lecture PowerShell <cmd>' -ForEach @(
         @{ cmd = "Get-Content -Raw 'entree.json' | pwsh -NoProfile -File .harness/hooks/dispatch.ps1 PreToolUse" },
@@ -822,7 +830,9 @@ Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
         @{ cmd = 'Write-Host ("Étape suivante : kubectl --context home apply -f x.yaml")' }, @{ cmd = 'rg -n kubectl docs | Select-Object -First 5' },
         @{ cmd = 'kubectl --context home get pods -o json | ConvertFrom-Json' }, @{ cmd = '$pods = kubectl --context home get pods -o name' },
         @{ cmd = 'if (Test-Path tofu/dns) { tofu -chdir=tofu/dns plan -out=dns.tfplan }' },
-        @{ cmd = "Get-ChildItem clusters -Recurse -Filter *.yaml | Where-Object { `$_.Name -match 'helm' }" }
+        @{ cmd = "Get-ChildItem clusters -Recurse -Filter *.yaml | Where-Object { `$_.Name -match 'helm' }" },
+        @{ cmd = '$msg=''kubectl apply a échoué''' }, @{ cmd = '$msg="échec de helm upgrade"; Write-Warning $msg' },
+        @{ cmd = '[regex]::Matches((Get-Content runbook.md -Raw), ''kubectl apply'').Count' }, @{ cmd = '[IO.Path]::Combine($PWD, ''tofu'', ''dns'')' }
     ) { (Invoke-Hook -Data (PowerShell $cmd)).Decision | Should -Be 'allow' }
     It 'exige le cluster nommé pour <cmd>' -ForEach @(
         @{ cmd = 'kubectl apply -f x.yaml' }, @{ cmd = 'kubectl -n app scale deploy/web --replicas=2' }, @{ cmd = 'helm upgrade web charts/app' },
