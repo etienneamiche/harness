@@ -73,7 +73,8 @@
         $kubectlFlags = '--insecure-skip-tls-verify', '--match-server-version', '--disable-compression', '--warnings-as-errors', '-h', '--help'
         $helmFlags = '--debug', '--kube-insecure-skip-tls-verify', '-h', '--help'
         $argocdFlags = '--grpc-web', '--insecure', '--plaintext', '--core', '--port-forward', '-h', '--help'
-        $kubectlDry = 'apply', 'create', 'delete', 'replace', 'patch', 'label', 'annotate', 'set', 'expose', 'run', 'scale', 'autoscale'
+        $gitCommandKeys = 'alias\.[^=\s]+|core\.(sshcommand|pager|editor|fsmonitor|hookspath)|credential\.[^=\s]*helper|[^=\s]+\.(command|cmd|helper|textconv|program)'
+        $kubectlDry ='apply', 'create', 'delete', 'replace', 'patch', 'label', 'annotate', 'set', 'expose', 'run', 'scale', 'autoscale'
 
         # Découpe : chaque segment a ses mots (guillemets retirés, substitution remplacée par $P),
         # le segment qui contient sa substitution (Parent) et celui qui reçoit sa sortie par `|` (Next).
@@ -275,16 +276,14 @@
                 # Affectation PowerShell ($x = cmd, $x=cmd, [string]$x = cmd, $a[0]=cmd, ${x} = cmd, $x ??= cmd) : la commande
                 # est à droite, sauf une valeur entre guillemets.
                 if ($pw) {
-                    $lhs = "^(\[[\w.,\[\] ]*\])*(\`$[\w:.]*|$P)(\[[^\]]*\]|\.\w+)*"; $op = '([-+*/%]|\?\?)?='
-                    if ($w[$k] -match "$lhs$op(?<rest>.*)$") {
-                        if ($s.Raws[$k] -match "=\s*['`"@]") { return 'text' }
-                        if ($Matches.rest) { $w[$k] = $Matches.rest } else { $k++ }
-                        continue
-                    }
-                    if ($w[$k] -match "$lhs`$" -and $k + 1 -lt $w.Count -and $w[$k + 1] -match "^$op(?<rest>.*)$") {
-                        $k++
-                        if ($Matches.rest) { if ($s.Raws[$k] -match "=\s*['`"@]") { return 'text' }; $w[$k] = $Matches.rest } else { $k++ }
-                        continue
+                    # Le côté gauche : casts, variables, index et virgules, en un ou plusieurs mots ([string] $x, $a, $b).
+                    $piece = "^((\[[\w.,\[\] ]*\])*(\`$[\w:.]*|$P)(\[[^\]]*\]|\.\w+)*,?|\[[\w.,\[\] ]*\]|,)*"; $op = '([-+*/%]|\?\?)?='; $start = "^[\[\`$,$P]"
+                    $j = $k
+                    while ($j -lt $w.Count -and $w[$j] -match "$piece`$" -and $w[$j] -match $start) { $j++ }
+                    if ($j -lt $w.Count -and ($j -gt $k -or $w[$j] -match $start) -and $w[$j] -match "$piece$op(?<rest>.*)$") {
+                        if (-not $Matches.rest) { $k = $j + 1; continue }
+                        if ($s.Raws[$j] -match "=\s*['`"@]") { return 'text' }
+                        $w[$j] = $Matches.rest; $k = $j; continue
                     }
                 }
                 $name = Get-Program $w[$k]
@@ -313,7 +312,8 @@
                     $x = $arguments[$j]; $before = if ($j) { $arguments[$j - 1] } else { '' }
                     if ($program -eq 'find' -and $x -match '^-(exec|execdir|ok|okdir)$') {
                         $e = $j + 1; while ($e -lt $arguments.Count -and $arguments[$e] -notin ';', '+') { $e++ }
-                        if ($e -gt $j + 1) { $scripts.Add((@($arguments[($j + 1)..($e - 1)]) -join ' ')) }
+                        # Les arguments de -exec sont des mots : relus avec leurs guillemets (sh -c '…').
+                        if ($e -gt $j + 1) { $scripts.Add((@($s.Raws[($k + 2 + $j)..($k + $e)]) -join ' ')) }
                         $j = $e
                     }
                     elseif ($program -eq 'git') {
@@ -322,7 +322,9 @@
                         }
                         if ($x -in '--exec', '-x' -and $j + 1 -lt $arguments.Count) { $scripts.Add($arguments[$j + 1]); $j++ }
                         elseif ($x -match '^--exec=(.*)$') { $scripts.Add($Matches[1]) }
-                        elseif ($x -match '^(alias\.[^=]+|core\.(sshcommand|pager|editor|fsmonitor))=!?(.*)$') { $scripts.Add($Matches[3]) }
+                        # Une clé de configuration dont la valeur est une commande : -c clé=valeur, ou git config clé valeur.
+                        elseif ($x -match "^($gitCommandKeys)=!?(?<v>.*)$") { $scripts.Add($Matches.v) }
+                        elseif ($x -match "^($gitCommandKeys)$" -and $j + 1 -lt $arguments.Count -and @($arguments | Select-Object -First $j) -contains 'config') { $scripts.Add(($arguments[$j + 1] -replace '^!', '')); $j++ }
                     }
                 }
                 foreach ($sc in $scripts) {
@@ -458,6 +460,8 @@
 
         $result = Read-Command $raw $(if ($ctx.ToolName -eq 'PowerShell') { 'pwsh' } else { 'bash' }) 0
         # Un programme ou un script qui vient d'une variable : la commande ne se lit pas jusqu'au bout.
+        # Un processus lancé par .NET ([Diagnostics.Process]::Start, StartInfo, InvokeScript) ne se lit pas non plus.
+        if ($ctx.ToolName -eq 'PowerShell' -and $raw -match '(?i)::(start|create\w*|invoke\w*)\b|\.(invoke\w*|addscript|start)\s*\(|startinfo') { $result.Dynamic = $true }
         if ($result.Dynamic) { if ($raw -match $infraName) { $result.Action = $true }; if ($raw -match $hookMark) { $result.Hook = $true } }
         if ($result.Hook) { return $stateDeny }
         if ($result.Destroy) {

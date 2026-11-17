@@ -761,7 +761,10 @@ Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
         @{ cmd = "git submodule foreach 'kubectl --context home apply -f x.yaml'" }, @{ cmd = 'kubectl --context home --alsologtostderr apply -f x.yaml' },
         @{ cmd = "rg -n '<<EOF' scripts/`nkubectl --context home apply -f x.yaml" }, @{ cmd = "grep -n '<<' deploy.sh`nkubectl --context home apply -f x.yaml" },
         @{ cmd = "git rebase --exec='kubectl --context home apply -f x.yaml' HEAD~1" }, @{ cmd = 'echo ${x:-{}; kubectl --context home apply -f x.yaml' },
-        @{ cmd = "python3 -c `"import os; os.system('microk8s.kubectl apply -f x.yaml')`"" }
+        @{ cmd = "python3 -c `"import os; os.system('microk8s.kubectl apply -f x.yaml')`"" },
+        @{ cmd = "find . -name x.yaml -exec sh -c 'kubectl --context home apply -f `"`$1`"' _ {} \;" },
+        @{ cmd = "git -c credential.helper='!kubectl --context home apply -f x.yaml' fetch" },
+        @{ cmd = "git config alias.up '!kubectl --context home apply -f x.yaml'" }
     ) {
         $r = Invoke-Hook -Data (Bash $cmd)
         $r.Decision | Should -Be 'deny'
@@ -783,7 +786,10 @@ Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
         @{ cmd = '[string]$out = kubectl --context home apply -f x.yaml' }, @{ cmd = '[string[]]$lines = helm --kube-context home upgrade web charts/app' },
         @{ cmd = '$a[0]=kubectl --context home apply -f x.yaml' }, @{ cmd = '$h[''web'']=kubectl --context home apply -f x.yaml' },
         @{ cmd = '$x ??= kubectl --context home apply -f x.yaml' }, @{ cmd = '${out} = kubectl --context home apply -f x.yaml' },
-        @{ cmd = "Start-Process microk8s.kubectl -ArgumentList 'apply','-f','x.yaml'" }
+        @{ cmd = "Start-Process microk8s.kubectl -ArgumentList 'apply','-f','x.yaml'" },
+        @{ cmd = '[string] $out = kubectl --context home apply -f x.yaml' }, @{ cmd = '$a,$b = helm --kube-context home upgrade web charts/app' },
+        @{ cmd = '$a, $b = kubectl --context home apply -f x.yaml' },
+        @{ cmd = '$p = [Diagnostics.Process]::new(); $p.StartInfo.FileName = ''kubectl''; $p.StartInfo.Arguments = ''--context home apply -f x.yaml''; $p.Start()' }
     ) {
         $r = Invoke-Hook -Data (PowerShell $cmd)
         $r.Decision | Should -Be 'deny'
