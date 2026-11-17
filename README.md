@@ -86,7 +86,7 @@ cliff.toml                   config git-cliff du CHANGELOG (app, game, sandbox, 
 | `destructive-guard` | PreToolUse | standard, strict | Commande destructive refusée au premier essai |
 | `config-protection` | PreToolUse | standard, strict | Configs de lint, harness, CI, `.gitignore`, SOPS protégés |
 | `secret-prompt` | UserPromptSubmit | tous | Message contenant un jeton bloqué |
-| `infra-guard` (module `infra`) | PreToolUse | tous | Action sur l'infra (`tofu apply`, `ansible-playbook`, `kubectl apply`, `helm upgrade`, `argocd app sync`…) refusée avec un code, jusqu'à l'accord de l'utilisateur ; cluster nommé et plan enregistré exigés ; état des accords protégé, au mieux |
+| `infra-guard` (module `infra`) | PreToolUse | tous | Appel à `kubectl`, `helm`, `tofu`, `terraform`, `argocd` ou `ansible*` refusé avec un code, sauf une lecture reconnue (`kubectl get`, `tofu plan`, `ansible-playbook --check`…), jusqu'à l'accord de l'utilisateur ; cluster nommé et plan enregistré exigés ; état des accords protégé, au mieux |
 | `infra-approval` (module `infra`) | UserPromptSubmit | tous | `ok infra <code>` écrit par l'utilisateur, seul dans son message : la commande de ce code passe une fois |
 | `doc-sprawl` | PostToolUse | standard, strict | Markdown écrit hors de `docs/` signalé |
 | `structural-watch` | PostToolUse | standard, strict | Bloc venu d'un template modifié → `/upstream` |
