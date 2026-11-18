@@ -1281,3 +1281,206 @@ Describe 'modules installés' {
         Get-Content (Join-Path $PSScriptRoot '..' 'agents' 'core.md') -Raw | Should -Match ([regex]::Escape("@../modules/$name/conventions.md"))
     }
 }
+
+Describe 'lint infra (module infra)' -Skip:(-not $HasInfra) {
+    BeforeAll {
+        # Copie jetable du harness dans un dépôt vide, et de faux outils sur un PATH réduit : les
+        # vrais outils ne tournent pas, et un outil absent du PATH l'est vraiment.
+        $script:Repo = Join-Path ([IO.Path]::GetTempPath()) "harness-lint-$([guid]::NewGuid())"
+        $script:Bin = Join-Path $Repo '_bin'
+        New-Item -ItemType Directory -Force $Bin | Out-Null
+        Copy-Item (Join-Path $script:Root '.harness') $Repo -Recurse
+        git -C $Repo init -q
+        Set-Content (Join-Path $Repo '.gitignore') '_bin/'
+        $script:Lint = Join-Path $Repo '.harness' 'modules' 'infra' 'lint.ps1'
+        $script:Log = Join-Path $Bin 'calls.log'
+        # Un faux outil note ses arguments, puis rend la sortie et le code demandés par
+        # FAKE_<OUTIL>_<1er argument>_OUT / _EXIT, ou à défaut FAKE_<OUTIL>_OUT / _EXIT.
+        $fake = @'
+$name = [IO.Path]::GetFileNameWithoutExtension($MyInvocation.MyCommand.Path)
+Add-Content $env:FAKE_LOG "$name $($args -join ' ')"
+$key = "FAKE_$($name.ToUpper() -replace '-', '_')"
+$sub = "$($key)_$("$($args[0])".TrimStart('-').ToUpper() -replace '-', '_')"
+$out = [Environment]::GetEnvironmentVariable("$($sub)_OUT") ?? [Environment]::GetEnvironmentVariable("$($key)_OUT")
+$code = [Environment]::GetEnvironmentVariable("$($sub)_EXIT") ?? [Environment]::GetEnvironmentVariable("$($key)_EXIT") ?? '0'
+if ($out) { $out }
+exit [int] $code
+'@
+        foreach ($t in 'tofu', 'tflint', 'kubeconform', 'yamllint', 'wsl') { Set-Content (Join-Path $Bin "$t.ps1") $fake }
+        $script:GitDir = Split-Path (Get-Command git -CommandType Application | Select-Object -First 1).Source
+
+        # Lance le lint avec, sur le PATH, les faux outils de -Tools seulement.
+        function Invoke-Lint([string[]] $LintArgs, [string[]] $Tools = @(), [hashtable] $Env = @{}) {
+            $dir = Join-Path $Bin ([guid]::NewGuid())
+            New-Item -ItemType Directory -Force $dir | Out-Null
+            foreach ($t in $Tools) { Copy-Item (Join-Path $Bin "$t.ps1") $dir }
+            if (Test-Path $Log) { Remove-Item $Log }
+            $Env = @{ Path = "$dir;$PSHOME;$GitDir"; FAKE_LOG = $Log } + $Env
+            $saved = @{}
+            foreach ($k in $Env.Keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k); [Environment]::SetEnvironmentVariable($k, $Env[$k]) }
+            try { $out = & (Join-Path $PSHOME 'pwsh') -NoProfile -NonInteractive -File $Lint @LintArgs 2>&1 | Out-String; $code = $LASTEXITCODE }
+            finally { foreach ($k in $saved.Keys) { [Environment]::SetEnvironmentVariable($k, $saved[$k]) } }
+            [pscustomobject]@{ Code = $code; Output = $out; Calls = @(if (Test-Path $Log) { Get-Content $Log }) }
+        }
+        function Set-File([string] $Rel, [string] $Text = 'x: 1') {
+            $file = Join-Path $Repo $Rel
+            New-Item -ItemType Directory -Force (Split-Path $file) | Out-Null
+            Set-Content $file $Text
+        }
+        $script:Manifest = "apiVersion: v1`nkind: ConfigMap`nmetadata:`n  name: a"
+    }
+    AfterAll { if (Test-Path $Repo) { Remove-Item $Repo -Recurse -Force } }
+    BeforeEach {
+        # Chaque test part d'un dépôt sans fichier d'infra modifié.
+        foreach ($d in 'tofu', 'clusters', 'ansible', 'charts', 'secrets', 'docs') { $p = Join-Path $Repo $d; if (Test-Path $p) { Remove-Item $p -Recurse -Force } }
+        git -C $Repo add -A 2>$null; git -C $Repo commit -q -m reset --no-verify --allow-empty 2>$null
+    }
+
+    It 'stop-checks lance le lint d''infra déclaré par le module' {
+        $checks = (Get-Content (Join-Path $Repo '.harness' 'modules' 'infra' 'module.json') -Raw | ConvertFrom-Json).stopChecks
+        @($checks.name) | Should -Be @('tofu', 'kubeconform', 'yamllint', 'ansible-lint')
+        foreach ($c in $checks) { $c.command | Should -Be "& ./.harness/modules/infra/lint.ps1 $($c.name)" }
+    }
+    It 'ne lance rien sans fichier concerné' {
+        Set-File 'docs/notes.md' '# notes'
+        $r = Invoke-Lint @('yamllint') -Tools 'yamllint'
+        $r.Code | Should -Be 0
+        $r.Calls | Should -BeNullOrEmpty
+    }
+    It 'un outil absent échoue et dit comment l''installer (<missing>)' -ForEach @(
+        @{ tool = 'tofu'; file = 'tofu/dns/main.tf'; present = @('tflint'); missing = 'tofu' }
+        @{ tool = 'tofu'; file = 'tofu/dns/main.tf'; present = @('tofu'); missing = 'tflint' }
+        @{ tool = 'kubeconform'; file = 'clusters/home/cm.yaml'; present = @(); missing = 'kubeconform' }
+        @{ tool = 'yamllint'; file = 'clusters/home/cm.yaml'; present = @(); missing = 'yamllint' }
+        @{ tool = 'ansible-lint'; file = 'ansible/site.yml'; present = @(); missing = 'ansible-lint' }
+    ) {
+        Set-File $file $Manifest
+        $r = Invoke-Lint @($tool) -Tools $present
+        $r.Code | Should -Be 1
+        $r.Output | Should -Match "$missing est introuvable, le lint n'a pas tourné"
+        $r.Output | Should -Match 'setup-workstation\.ps1'
+    }
+    It 'ansible-lint absent de WSL est signalé, avec la distribution (HARNESS_WSL_DISTRO)' {
+        Set-File 'ansible/site.yml'
+        $r = Invoke-Lint @('ansible-lint') -Tools 'wsl' -Env @{ FAKE_WSL_EXIT = '1'; HARNESS_WSL_DISTRO = 'Debian' }
+        $r.Code | Should -Be 1
+        $r.Output | Should -Match 'ansible-lint est introuvable.*wsl -d Debian'
+        $r.Calls | Should -Not -Match 'ansible-lint --nocolor'
+    }
+    It '-Missing liste les outils absents' {
+        $r = Invoke-Lint @('-Missing') -Tools 'tofu', 'yamllint'
+        $r.Code | Should -Be 0
+        $r.Output | Should -Match 'tflint'
+        $r.Output | Should -Match 'kubeconform'
+        $r.Output | Should -Match 'ansible-lint'
+        $r.Output | Should -Not -Match '(?m)^tofu\s'
+        $r.Output | Should -Not -Match '(?m)^yamllint\s'
+    }
+    It 'yamllint ne lit que le YAML modifié, hors secrets SOPS et templates de chart' {
+        Set-File 'clusters/home/apps/blog/values.yaml'
+        Set-File 'secrets/app.sops.yaml'
+        Set-File 'charts/app/templates/deployment.yaml' '{{ .Values.x }}'
+        Set-File 'charts/app/values.yaml'
+        Set-File 'docs/notes.md' '# notes'
+        $r = Invoke-Lint @('yamllint') -Tools 'yamllint'
+        $r.Code | Should -Be 0
+        $r.Calls.Count | Should -Be 1
+        $r.Calls[0] | Should -Match 'clusters/home/apps/blog/values\.yaml'
+        $r.Calls[0] | Should -Match 'charts/app/values\.yaml'
+        $r.Calls[0] | Should -Not -Match 'sops|templates|notes'
+        # Sans .yamllint dans le dépôt, une config compatible avec ansible-lint est passée.
+        $r.Calls[0] | Should -Match '-d \{extends: default'
+    }
+    It 'yamllint garde la config du dépôt quand elle existe' {
+        Set-File 'clusters/home/cm.yaml'
+        Set-File '.yamllint' 'extends: relaxed'
+        try {
+            $r = Invoke-Lint @('yamllint') -Tools 'yamllint'
+            $r.Calls[0] | Should -Not -Match ' -d '
+        }
+        finally { Remove-Item (Join-Path $Repo '.yamllint') }
+    }
+    It 'une erreur de yamllint fait échouer le lint et montre sa sortie' {
+        Set-File 'clusters/home/cm.yaml'
+        $r = Invoke-Lint @('yamllint') -Tools 'yamllint' -Env @{ FAKE_YAMLLINT_EXIT = '1'; FAKE_YAMLLINT_OUT = 'cm.yaml:1:1: [error] trailing spaces' }
+        $r.Code | Should -Be 1
+        $r.Output | Should -Match 'yamllint :'
+        $r.Output | Should -Match 'trailing spaces'
+    }
+    It 'kubeconform ne lit que les manifestes (clé kind:) sous clusters/' {
+        Set-File 'clusters/home/apps/blog/deployment.yaml' $Manifest
+        Set-File 'clusters/home/apps/blog/values.yaml' 'replicaCount: 1'
+        Set-File 'clusters/home/secret.sops.yaml' $Manifest
+        Set-File 'ansible/site.yml' $Manifest
+        $r = Invoke-Lint @('kubeconform') -Tools 'kubeconform'
+        $r.Code | Should -Be 0
+        $r.Calls.Count | Should -Be 1
+        $r.Calls[0] | Should -Match '^kubeconform -strict '
+        $r.Calls[0] | Should -Match 'deployment\.yaml$'
+        $r.Calls[0] | Should -Not -Match 'values|sops|ansible'
+    }
+    It 'tofu lance fmt, validate et tflint dans chaque dossier touché, et rien ailleurs' {
+        Set-File 'tofu/dns/main.tf' 'terraform {}'
+        Set-File 'tofu/vpn/variables.tf' 'terraform {}'
+        Set-File 'tofu/vpn/README.md' '# vpn'
+        Set-File 'tofu/proxmox/notes.md' '# notes'
+        $r = Invoke-Lint @('tofu') -Tools 'tofu', 'tflint'
+        $r.Code | Should -Be 0
+        @($r.Calls | Where-Object { $_ -match '^tofu fmt -check' }).Count | Should -Be 2
+        @($r.Calls | Where-Object { $_ -match '^tofu validate' }).Count | Should -Be 2
+        @($r.Calls | Where-Object { $_ -match '^tflint' }).Count | Should -Be 2
+        $r.Calls | Should -Not -Match 'init'
+    }
+    It 'tofu validate sans init dit de lancer tofu init, sans le lancer' {
+        Set-File 'tofu/dns/main.tf' 'terraform {}'
+        $r = Invoke-Lint @('tofu') -Tools 'tofu', 'tflint' -Env @{ FAKE_TOFU_VALIDATE_EXIT = '1'; FAKE_TOFU_VALIDATE_OUT = 'Error: Missing required provider. Run "tofu init".' }
+        $r.Code | Should -Be 1
+        $r.Output | Should -Match 'lancer une fois `tofu init` dans tofu/dns'
+        $r.Calls | Should -Not -Match '^tofu init'
+    }
+    It 'une erreur de tofu validate est signalée avec sa sortie' {
+        Set-File 'tofu/dns/main.tf' 'terraform {}'
+        $r = Invoke-Lint @('tofu') -Tools 'tofu', 'tflint' -Env @{ FAKE_TOFU_VALIDATE_EXIT = '1'; FAKE_TOFU_VALIDATE_OUT = 'Error: Reference to undeclared input variable' }
+        $r.Code | Should -Be 1
+        $r.Output | Should -Match 'tofu validate \(tofu/dns\) :'
+        $r.Output | Should -Match 'undeclared input variable'
+        $r.Output | Should -Not -Match 'tofu init'
+    }
+    It 'tofu fmt en échec est signalé avec le dossier' {
+        Set-File 'tofu/dns/main.tf' 'terraform {}'
+        $r = Invoke-Lint @('tofu') -Tools 'tofu', 'tflint' -Env @{ FAKE_TOFU_FMT_EXIT = '3'; FAKE_TOFU_FMT_OUT = 'main.tf' }
+        $r.Code | Should -Be 1
+        $r.Output | Should -Match 'tofu fmt \(tofu/dns'
+    }
+    It 'ansible-lint tourne dans WSL avec les chemins en arguments' {
+        Set-File 'ansible/site.yml'
+        Set-File 'ansible/group_vars/all.sops.yaml'
+        Set-File 'clusters/home/cm.yaml'
+        $r = Invoke-Lint @('ansible-lint') -Tools 'wsl' -Env @{ HARNESS_WSL_DISTRO = 'Debian' }
+        $r.Code | Should -Be 0
+        $run = @($r.Calls | Where-Object { $_ -match 'ansible-lint --nocolor' })
+        $run.Count | Should -Be 1
+        $run[0] | Should -Match '^wsl -d Debian --cd .+ --exec bash -lc ansible-lint --nocolor -q "\$@" ansible-lint ansible/site\.yml$'
+    }
+    It 'un fichier supprimé n''est pas lu' {
+        Set-File 'clusters/home/cm.yaml'
+        git -C $Repo add -A; git -C $Repo commit -q -m cm --no-verify 2>$null
+        Remove-Item (Join-Path $Repo 'clusters/home/cm.yaml')
+        $r = Invoke-Lint @('yamllint') -Tools 'yamllint'
+        $r.Code | Should -Be 0
+        $r.Calls | Should -BeNullOrEmpty
+    }
+    It 'un fichier renommé est lu sous son nouveau nom' {
+        # Un ancien nom court : lu comme une entrée de plus, il ferait échouer le lint.
+        Set-File 'ab' 'a: 1'
+        git -C $Repo add -A; git -C $Repo commit -q -m old --no-verify 2>$null
+        New-Item -ItemType Directory -Force (Join-Path $Repo 'clusters/home') | Out-Null
+        git -C $Repo mv ab clusters/home/new.yaml
+        try {
+            $r = Invoke-Lint @('yamllint') -Tools 'yamllint'
+            $r.Code | Should -Be 0
+            $r.Calls[0] | Should -Match 'clusters/home/new\.yaml$'
+        }
+        finally { git -C $Repo rm -q -f --cached clusters/home/new.yaml 2>$null; git -C $Repo commit -q -m rm --no-verify 2>$null }
+    }
+}
