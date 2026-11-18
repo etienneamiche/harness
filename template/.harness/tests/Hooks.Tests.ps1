@@ -679,7 +679,7 @@ Describe 'destructive-guard' {
         (Invoke-Hook -Data (Bash 'rm -rf build')).Decision | Should -Be 'allow'
     }
     It 'accepte au deuxième essai chaque commande d''une même session' {
-        $cmds = 'rm -rf build', 'git reset --hard HEAD~1', 'tofu destroy'
+        $cmds = 'rm -rf build', 'git reset --hard HEAD~1', 'git branch -D old'
         foreach ($c in $cmds) {
             (Invoke-Hook -Data (Bash $c)).Decision | Should -Be 'deny'
             (Invoke-Hook -Data (Bash $c)).Decision | Should -Be 'allow'
@@ -693,8 +693,8 @@ Describe 'destructive-guard' {
         '["0123456789abcdef0123456789abcdef"]' | Set-Content (Get-HarnessStatePath $script:SessionId 'destructive')
         (Invoke-Hook -Data (Bash 'rm -rf build')).Decision | Should -Be 'deny'
         (Invoke-Hook -Data (Bash 'rm -rf build')).Decision | Should -Be 'allow'
-        (Invoke-Hook -Data (Bash 'tofu destroy')).Decision | Should -Be 'deny'
-        (Invoke-Hook -Data (Bash 'tofu destroy')).Decision | Should -Be 'allow'
+        (Invoke-Hook -Data (Bash 'git branch -D old')).Decision | Should -Be 'deny'
+        (Invoke-Hook -Data (Bash 'git branch -D old')).Decision | Should -Be 'allow'
     }
     It 'reconnaît <cmd>' -ForEach @(
         @{ cmd = 'Remove-Item ./dist -Recurse -Force' }, @{ cmd = 'git reset --hard HEAD~1' },
@@ -714,6 +714,260 @@ Describe 'config-protection' {
     ) { (Invoke-Hook -Data (Tool 'Edit' @{ file_path = (Join-Path $script:Root $path); old_string = 'a'; new_string = 'b' })).Decision | Should -Be 'deny' }
     It 'laisse modifier le code et AGENTS.md (<path>)' -ForEach @(@{ path = 'src/app.ts' }, @{ path = 'AGENTS.md' }, @{ path = 'docs/adr/0001.md' }) {
         (Invoke-Hook -Data (Tool 'Edit' @{ file_path = (Join-Path $script:Root $path); old_string = 'a'; new_string = 'b' })).Decision | Should -Be 'allow'
+    }
+}
+
+Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
+    BeforeAll {
+        function Get-Code([string] $Reason) { if ($Reason -match 'ok infra (\d{4})') { $Matches[1] } }
+    }
+    It 'demande un accord pour l''action <cmd>' -ForEach @(
+        @{ cmd = 'kubectl --context home apply -f clusters/home/platform/x.yaml' }, @{ cmd = 'kubectl --context=vps rollout restart deploy/web' },
+        @{ cmd = 'kubectl --context home -n app exec web -- sh' }, @{ cmd = 'helm --kube-context home upgrade web charts/app' },
+        @{ cmd = 'tofu -chdir=tofu/dns apply dns.tfplan' }, @{ cmd = 'tofu import cloudflare_record.www x' }, @{ cmd = 'tofu state rm x.y' },
+        @{ cmd = 'wsl ansible-playbook -i ansible/inventory.yml ansible/site.yml' }, @{ cmd = 'wsl ansible all -m ping' },
+        @{ cmd = 'wsl ansible edge -m shell -a "uptime" --check' }, @{ cmd = 'argocd app sync web' }, @{ cmd = 'bash -c "kubectl --context home apply -f x.yaml"' },
+        @{ cmd = 'wsl ansible-playbook -i ansible/inventory.yml ansible/site.yml -c local' }, @{ cmd = 'wsl -d Ubuntu ansible-playbook ansible/site.yml # --check' },
+        @{ cmd = 'tofu -chdir=tofu/dns test' }, @{ cmd = 'kubectl --context home auth reconcile -f rbac.yaml' }, @{ cmd = 'helm --kube-context home test web' },
+        @{ cmd = 'argocd appset delete web' }, @{ cmd = 'wsl ansible-pull -U https://example.invalid/repo.git' },
+        @{ cmd = '& "C:\tools\tofu.exe" -chdir=tofu/dns apply dns.tfplan' }, @{ cmd = 'ssh node-01 sudo k3s kubectl --context home apply -f x.yaml' },
+        @{ cmd = 'wsl bash -lc "ansible-playbook -i inv site.yml"' }, @{ cmd = 'wsl -e bash -lc "ansible-playbook site.yml"' },
+        @{ cmd = "wsl -- bash -lc 'cd /mnt/c/infra && ansible-playbook site.yml'" }, @{ cmd = 'bash -lc "kubectl --context home apply -f x.yaml"' },
+        @{ cmd = 'cmd /c "kubectl --context home apply -f x.yaml"' }, @{ cmd = 'pwsh -C "kubectl --context home apply -f x.yaml"' },
+        @{ cmd = 'Invoke-Expression "kubectl --context home apply -f x.yaml"' }, @{ cmd = 'ssh node-01 "sudo k3s kubectl apply -f x.yaml"' },
+        @{ cmd = "ssh node-01 'kubectl --context home -n app scale deploy/web --replicas=0'" },
+        @{ cmd = 'KUBECONFIG=clusters/home.yaml kubectl --context home apply -f x.yaml' }, @{ cmd = 'TF_LOG=debug tofu apply dns.tfplan' },
+        @{ cmd = 'wsl bash -c "ANSIBLE_CONFIG=ansible/ansible.cfg ansible-playbook site.yml"' }, @{ cmd = 'timeout 300 kubectl --context home apply -f x.yaml' },
+        @{ cmd = 'nohup kubectl --context home apply -f x.yaml &' }, @{ cmd = 'cat pods.txt | xargs kubectl --context home delete pod' },
+        @{ cmd = 'wsl.exe -d Ubuntu -- ansible-playbook site.yml' }, @{ cmd = 'kubectl --context="home" apply -f x.yaml' },
+        @{ cmd = 'helm --kube-context="home" upgrade web charts/app' }, @{ cmd = 'tofu -chdir="tofu/dns" apply dns.tfplan' },
+        @{ cmd = "terraform -chdir='tofu/dns' import cloudflare_record.www x" }, @{ cmd = 'kubectl --request-timeout 30s --context home apply -f x.yaml' },
+        @{ cmd = 'kubectl --context home "apply" -f x.yaml' }, @{ cmd = 'kube""ctl --context home apply -f x.yaml' }, @{ cmd = 'tofu apply "dns.tfplan"' },
+        @{ cmd = 'wsl ansible-console all' }, @{ cmd = "echo 'kubectl --context home apply -f x.yaml' | bash" },
+        @{ cmd = "kubectl --context home \`n  apply -f x.yaml" }, @{ cmd = "kubectl --context home -n app \`r`n  delete pod web-1" },
+        @{ cmd = 'kubectl --context home rollout -n app restart deploy/web' }, @{ cmd = 'kubectl --context home rollout --namespace app restart deploy/web' },
+        @{ cmd = 'wsl bash -lc "ansible-playbook -i inv site.yml && ansible-playbook -i inv smoke.yml --check"' },
+        @{ cmd = 'echo $(kubectl --context home delete ns app)' }, @{ cmd = '(cd tofu/dns && tofu apply dns.tfplan)' },
+        @{ cmd = 'kubectl --context home rollout --timeout 60s restart deploy/web' }, @{ cmd = 'kubectl --context home -n $(cat ns.txt) delete pod web-1' },
+        @{ cmd = 'kubectl --context home --kubeconfig $(pwd)/kc.yaml apply -f x.yaml' }, @{ cmd = 'echo "applied: $(kubectl --context home apply -f x.yaml)"' },
+        @{ cmd = 'echo "x `kubectl --context home apply -f x.yaml`"' }, @{ cmd = 'for f in *.yaml; do kubectl --context home apply -f $f; done' },
+        @{ cmd = 'kubectl --context home $VERB -f x.yaml' }, @{ cmd = 'kubectl --context home plugin-thing' },
+        @{ cmd = "python -c `"import os; os.system('kubectl --context home apply -f x.yaml')`"" },
+        @{ cmd = 'tofu -chdir=tofu/dns init -migrate-state' }, @{ cmd = 'wsl ansible-playbook site.yml -- --check' },
+        @{ cmd = 'kubectl --context home run x --image=busybox -- --dry-run=server' }, @{ cmd = 'kubectl --context home --profile get apply -f x.yaml' },
+        @{ cmd = "cat <<EOF | bash`nkubectl --context home apply -f x.yaml`nEOF" }, @{ cmd = "echo 'kubectl --context home apply -f x.yaml' > run.sh" },
+        @{ cmd = 'C:\tools\kubectl.exe --context home apply -f x.yaml' },
+        @{ cmd = 'echo "${#PODS[@]} pods"; kubectl --context home delete pod web-1' }, @{ cmd = "echo $'it\'s'; kubectl --context home apply -f x.yaml" },
+        @{ cmd = "git submodule foreach 'kubectl --context home apply -f x.yaml'" }, @{ cmd = 'kubectl --context home --alsologtostderr apply -f x.yaml' },
+        @{ cmd = "rg -n '<<EOF' scripts/`nkubectl --context home apply -f x.yaml" }, @{ cmd = "grep -n '<<' deploy.sh`nkubectl --context home apply -f x.yaml" },
+        @{ cmd = "git rebase --exec='kubectl --context home apply -f x.yaml' HEAD~1" }, @{ cmd = 'echo ${x:-{}; kubectl --context home apply -f x.yaml' },
+        @{ cmd = "python3 -c `"import os; os.system('microk8s.kubectl apply -f x.yaml')`"" },
+        @{ cmd = "find . -name x.yaml -exec sh -c 'kubectl --context home apply -f `"`$1`"' _ {} \;" },
+        @{ cmd = "git -c credential.helper='!kubectl --context home apply -f x.yaml' fetch" },
+        @{ cmd = "git config alias.up '!kubectl --context home apply -f x.yaml'" },
+        @{ cmd = "git submodule foreach sh -c 'kubectl --context home apply -f x.yaml'" }, @{ cmd = "git bisect run sh -c 'kubectl --context home apply -f x.yaml'" },
+        @{ cmd = "git -c diff.external='kubectl --context home apply -f x.yaml' diff" },
+        @{ cmd = "git ls-remote --upload-pack='kubectl --context home apply -f x.yaml' origin" },
+        @{ cmd = "git submodule --quiet foreach 'kubectl --context home apply -f x.yaml'" },
+        @{ cmd = 'git submodule foreach --recursive kubectl --context home apply -f x.yaml' },
+        @{ cmd = "git clone -u 'kubectl --context home apply -f x.yaml' origin x" },
+        @{ cmd = "git clone -c core.sshCommand='kubectl --context home apply -f x.yaml' ssh://h/r" },
+        @{ cmd = "git ls-remote --upl='kubectl --context home apply -f x.yaml' origin" },
+        @{ cmd = "GIT_EXTERNAL_DIFF='kubectl --context home apply -f x.yaml' git diff" },
+        @{ cmd = "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.pager GIT_CONFIG_VALUE_0='kubectl --context home apply -f x.yaml' git log" },
+        @{ cmd = "GIT_ALLOW_PROTOCOL=ext git ls-remote 'ext::sh -c kubectl% --context% home% apply% -f% x.yaml'" },
+        @{ cmd = "git config protocol.ext.allow always && git ls-remote 'ext::sh -c kubectl% --context% home% apply% -f% x.yaml'" },
+        @{ cmd = "git -c core.askPass='kubectl --context home apply -f x.yaml' fetch" },
+        @{ cmd = "GH_PAGER='kubectl --context home apply -f x.yaml' gh pr list" }, @{ cmd = "GH_EDITOR='kubectl --context home apply -f x.yaml' gh repo view" },
+        @{ cmd = "GH_BROWSER='kubectl --context home apply -f x.yaml' gh repo view" }, @{ cmd = "MANPAGER='kubectl --context home apply -f x.yaml' git help log" },
+        @{ cmd = "BROWSER='kubectl --context home apply -f x.yaml' gh repo view --web" }, @{ cmd = "LESSCLOSE='kubectl --context home apply -f x.yaml' less x.txt" }
+    ) {
+        $r = Invoke-Hook -Data (Bash $cmd)
+        $r.Decision | Should -Be 'deny'
+        Get-Code $r.Reason | Should -Not -BeNullOrEmpty
+    }
+    It 'demande un accord pour l''action PowerShell <cmd>' -ForEach @(
+        @{ cmd = '& "C:\tools\tofu.exe" -chdir=tofu/dns apply dns.tfplan' }, @{ cmd = 'Invoke-Expression "kubectl --context home apply -f x.yaml"' },
+        @{ cmd = "kubectl --context home -n app ```n  scale deploy/web --replicas=0" }, @{ cmd = "kubectl --context home ```r`n  apply -f x.yaml" },
+        @{ cmd = "tofu -chdir=tofu/dns ```n  apply dns.tfplan" }, @{ cmd = "helm upgrade --install web charts/app ```n  --kube-context home -n app -f values.yaml" },
+        @{ cmd = "Start-Process kubectl -ArgumentList '--context','home','apply','-f','x.yaml' -Wait" },
+        @{ cmd = 'Write-Output (kubectl --context home apply -f x.yaml)' }, @{ cmd = "Set-Location C:\infra\tofu\dns\`ntofu apply dns.tfplan" },
+        @{ cmd = "cd .\tofu\dns\`ntofu apply dns.tfplan" }, @{ cmd = "Copy-Item x.yaml manifests\`nkubectl --context home apply -f manifests/x.yaml" },
+        @{ cmd = 'kubectl --context home -n (Get-Content ns.txt) delete pod web-1' }, @{ cmd = 'Write-Output "result: $(kubectl --context home apply -f x.yaml)"' },
+        @{ cmd = 'Get-ChildItem *.yaml | ForEach-Object { kubectl --context home apply -f $_.FullName }' },
+        @{ cmd = '$k = ''kubectl''; & $k --context home apply -f x.yaml' },
+        @{ cmd = "`$m = @'`nit's`n'@`nkubectl --context home apply -f x.yaml" },
+        @{ cmd = '$r=kubectl --context home apply -f x.yaml' }, @{ cmd = "[Diagnostics.Process]::Start('kubectl', '--context home apply -f x.yaml')" },
+        @{ cmd = "New-Item run.ps1 -Value 'kubectl --context home apply -f x.yaml'" },
+        @{ cmd = '[string]$out = kubectl --context home apply -f x.yaml' }, @{ cmd = '[string[]]$lines = helm --kube-context home upgrade web charts/app' },
+        @{ cmd = '$a[0]=kubectl --context home apply -f x.yaml' }, @{ cmd = '$h[''web'']=kubectl --context home apply -f x.yaml' },
+        @{ cmd = '$x ??= kubectl --context home apply -f x.yaml' }, @{ cmd = '${out} = kubectl --context home apply -f x.yaml' },
+        @{ cmd = "Start-Process microk8s.kubectl -ArgumentList 'apply','-f','x.yaml'" },
+        @{ cmd = '[string] $out = kubectl --context home apply -f x.yaml' }, @{ cmd = '$a,$b = helm --kube-context home upgrade web charts/app' },
+        @{ cmd = '$a, $b = kubectl --context home apply -f x.yaml' }, @{ cmd = '[Dictionary[string, int]] $d = kubectl --context home apply -f x.yaml' },
+        @{ cmd = '$h[''a='']=kubectl --context home apply -f x.yaml' },
+        @{ cmd = '$p = [Diagnostics.Process]::new(); $p.StartInfo.FileName = ''kubectl''; $p.StartInfo.Arguments = ''--context home apply -f x.yaml''; $p.Start()' },
+        @{ cmd = '$env:GIT_EXTERNAL_DIFF = ''kubectl --context home apply -f x.yaml''; git diff' },
+        @{ cmd = '$h = @{ out = kubectl --context home apply -f x.yaml }' }, @{ cmd = '$h = @{ ''out'' = kubectl --context home apply -f x.yaml }' },
+        @{ cmd = '$env:GIT_ALLOW_PROTOCOL = ''ext''; git ls-remote ''ext::sh -c kubectl% --context% home% apply% -f% x.yaml''' },
+        @{ cmd = '$v = ''kubectl --context home apply -f x.yaml''; Set-Item env:GIT_PAGER $v; git log' },
+        @{ cmd = '[Environment]::SetEnvironmentVariable(''GIT_PAGER'', ''kubectl --context home apply -f x.yaml''); git log' }
+    ) {
+        $r = Invoke-Hook -Data (PowerShell $cmd)
+        $r.Decision | Should -Be 'deny'
+        Get-Code $r.Reason | Should -Not -BeNullOrEmpty
+    }
+    It 'laisse passer la lecture <cmd>' -ForEach @(
+        @{ cmd = 'kubectl --context home get pods -n app' }, @{ cmd = 'kubectl get nodes' }, @{ cmd = 'kubectl --context home diff -f x.yaml' },
+        @{ cmd = 'kubectl --context home logs deploy/web' }, @{ cmd = 'tofu -chdir=tofu/dns plan -out=dns.tfplan' }, @{ cmd = 'tofu show dns.tfplan' },
+        @{ cmd = 'wsl ansible-playbook -i ansible/inventory.yml ansible/site.yml --check --diff' }, @{ cmd = 'wsl ansible --version' },
+        @{ cmd = 'wsl ansible-lint ansible/' }, @{ cmd = 'helm --kube-context home template web charts/app' }, @{ cmd = 'argocd app diff web' },
+        @{ cmd = 'echo "feat(tofu): apply the dns plan"' }, @{ cmd = 'kubectl --context home get pods -l run=web' },
+        @{ cmd = 'kubectl --context home logs deploy/web -c debug' }, @{ cmd = 'kubectl --context home describe pod debug-7f9c' },
+        @{ cmd = 'kubectl --context home get pod run-migrations-x1' }, @{ cmd = 'kubectl get pods -n debug' }, @{ cmd = 'cd ansible && ls' },
+        @{ cmd = 'git diff -- ansible tofu' }, @{ cmd = 'tree ansible -L 2' }, @{ cmd = 'grep -rn become ansible roles' }, @{ cmd = 'echo "ansible ok"' },
+        @{ cmd = 'rg "kubectl apply" docs' }, @{ cmd = 'git grep -n "helm upgrade"' }, @{ cmd = 'Select-String -Path docs/*.md -Pattern "kubectl apply"' },
+        @{ cmd = 'helm plugin install https://example.invalid/plugin' }, @{ cmd = 'git log --oneline --grep "tofu apply"' },
+        @{ cmd = 'rg -n UserPromptSubmit .harness' }, @{ cmd = 'cat .harness/modules/infra/rules/UserPromptSubmit/infra-approval.ps1' },
+        @{ cmd = 'Get-ChildItem .claude -r' }, @{ cmd = 'kubectl --context home get pods -o yaml' },
+        @{ cmd = 'wsl bash -lc "cd /mnt/c/infra/ansible && ansible-playbook -i inventory.yml site.yml --check --diff"' },
+        @{ cmd = 'wsl bash -lc "cd /mnt/c/infra/ansible && ls"' }, @{ cmd = 'wsl bash -lc "cd ~/infra/ansible && ansible-inventory --graph"' },
+        @{ cmd = 'ssh node-01 "kubectl --context home logs deploy/web -c debug"' }, @{ cmd = 'ssh node-01 "kubectl --context home get pods -n debug"' },
+        @{ cmd = 'mkdir -p ansible roles' }, @{ cmd = 'New-Item -ItemType Directory ansible -Force' }, @{ cmd = 'Copy-Item roles/web ansible -Recurse' },
+        @{ cmd = 'pip install ansible kubernetes' }, @{ cmd = 'sudo apt install ansible -y' }, @{ cmd = 'wsl ansible-playbook --syntax-check ansible/site.yml' },
+        @{ cmd = "Get-Content -Raw 'entree.json' | pwsh -NoProfile -File .harness/hooks/dispatch.ps1 PreToolUse" },
+        @{ cmd = 'kubectl --context home apply --dry-run=server -f x.yaml' }, @{ cmd = 'cd C:/repo/claude-harness-infra && git status' },
+        @{ cmd = "echo `"`$(cat <<'EOF'`nfeat(infra): kubectl apply du chart`n`nhelm upgrade ensuite`nEOF`n)`"" },
+        @{ cmd = 'kubectl --context home get pods 2>&1 | head -20' }, @{ cmd = 'rg -n kubectl docs 2>/dev/null | head' },
+        @{ cmd = 'pods=$(kubectl --context home get pods -o name)' }, @{ cmd = 'kubectl --context home get pods | grep web' },
+        @{ cmd = 'cat x.yaml | kubectl --context home diff -f -' }, @{ cmd = 'tofu -chdir=tofu/dns validate && tofu -chdir=tofu/dns fmt -check' },
+        @{ cmd = 'tofu -chdir=tofu/dns state list' }, @{ cmd = 'helm --kube-context home upgrade web charts/app --dry-run=server' },
+        @{ cmd = 'helm --kube-context home history web' }, @{ cmd = 'kubectl --context home rollout status deploy/web' },
+        @{ cmd = 'kubectl --context home apply --help' }, @{ cmd = 'kubectl --context home auth can-i create pods' },
+        @{ cmd = 'kubectl config get-contexts' }, @{ cmd = 'argocd app get web' }, @{ cmd = 'tofu version' }, @{ cmd = 'yamllint ansible/' },
+        @{ cmd = "echo 'kubectl --context home apply -f x.yaml' >> docs/runbook.md" },
+        @{ cmd = 'helm --kube-context home upgrade web charts/app --set tag=$(git rev-parse HEAD) --dry-run' },
+        @{ cmd = "find tofu -name '*.tf'" }, @{ cmd = 'yamllint ansible' }, @{ cmd = 'du -sh tofu/dns/.terraform' },
+        @{ cmd = "watch -n 5 'kubectl --context home get pods'" }, @{ cmd = 'echo "${#PODS[@]} pods"' },
+        @{ cmd = "find tofu -name '*.tf' -exec grep -l helm {} +" }, @{ cmd = 'kubectl' }, @{ cmd = 'helm' },
+        @{ cmd = 'git -C tofu log --oneline' }, @{ cmd = 'git config user.name "helm bot"' },
+        @{ cmd = "git submodule foreach 'git grep -n kubectl || true'" },
+        @{ cmd = 'git grep -c kubectl' }, @{ cmd = 'git ls-files config tofu' }, @{ cmd = 'git log -c --stat -- helm' },
+        @{ cmd = 'git -C tofu grep -n "tofu apply"' }, @{ cmd = 'GIT_PAGER=cat git log --oneline' },
+        @{ cmd = "git -c http.extraHeader='X: kubectl' fetch" }, @{ cmd = "find docs -exec grep -lE 'kubectl|helm' {} +" },
+        @{ cmd = 'GIT_PAGER=cat git log -S helm --oneline' }, @{ cmd = 'echo "$EDITOR"; kubectl --context home get pods' },
+        @{ cmd = 'export EDITOR=vim; kubectl --context home get pods' }, @{ cmd = "rg -n 'GIT_SSH_COMMAND' -- ansible" }
+    ) { (Invoke-Hook -Data (Bash $cmd)).Decision | Should -Be 'allow' }
+    It 'laisse passer la lecture PowerShell <cmd>' -ForEach @(
+        @{ cmd = "Get-Content -Raw 'entree.json' | pwsh -NoProfile -File .harness/hooks/dispatch.ps1 PreToolUse" },
+        @{ cmd = 'Get-Content -Raw "entree.json" | pwsh -NoProfile -NonInteractive -File "$env:CLAUDE_PROJECT_DIR/.harness/hooks/dispatch.ps1" PreToolUse' },
+        @{ cmd = "(Get-Content docs/runbook.md) -match 'kubectl apply'" }, @{ cmd = "Select-String -Path (Get-ChildItem docs -Filter *.md) -Pattern 'helm upgrade'" },
+        @{ cmd = 'Write-Host ("Étape suivante : kubectl --context home apply -f x.yaml")' }, @{ cmd = 'rg -n kubectl docs | Select-Object -First 5' },
+        @{ cmd = 'kubectl --context home get pods -o json | ConvertFrom-Json' }, @{ cmd = '$pods = kubectl --context home get pods -o name' },
+        @{ cmd = 'if (Test-Path tofu/dns) { tofu -chdir=tofu/dns plan -out=dns.tfplan }' },
+        @{ cmd = "Get-ChildItem clusters -Recurse -Filter *.yaml | Where-Object { `$_.Name -match 'helm' }" },
+        @{ cmd = '$msg=''kubectl apply a échoué''' }, @{ cmd = '$msg="échec de helm upgrade"; Write-Warning $msg' },
+        @{ cmd = '[regex]::Matches((Get-Content runbook.md -Raw), ''kubectl apply'').Count' }, @{ cmd = '[IO.Path]::Combine($PWD, ''tofu'', ''dns'')' },
+        @{ cmd = '$sw = [Diagnostics.Stopwatch]::StartNew(); kubectl --context home get pods; $sw.Stop()' },
+        @{ cmd = '$f = [IO.File]::CreateText(''notes-helm.txt''); $f.Close()' }, @{ cmd = '$a = [ordered] @{ a = ''kubectl apply'' }' },
+        @{ cmd = '$env:EDITOR = ''code --wait''; kubectl --context home get pods' }
+    ) { (Invoke-Hook -Data (PowerShell $cmd)).Decision | Should -Be 'allow' }
+    It 'exige le cluster nommé pour <cmd>' -ForEach @(
+        @{ cmd = 'kubectl apply -f x.yaml' }, @{ cmd = 'kubectl -n app scale deploy/web --replicas=2' }, @{ cmd = 'helm upgrade web charts/app' },
+        @{ cmd = 'kubectl apply -f x.yaml # --context home' }, @{ cmd = 'kubectl --context $(kubectl config current-context) apply -f x.yaml' },
+        @{ cmd = 'kubectl --context $CTX apply -f x.yaml' }
+    ) {
+        $r = Invoke-Hook -Data (Bash $cmd)
+        $r.Decision | Should -Be 'deny'
+        $r.Reason | Should -Match '--context'
+    }
+    It 'exige un plan enregistré pour <cmd>' -ForEach @(
+        @{ cmd = 'tofu apply' }, @{ cmd = 'tofu -chdir=tofu/dns apply -auto-approve' }, @{ cmd = 'terraform apply -var-file=x' }, @{ cmd = 'tofu destroy' },
+        @{ cmd = 'tofu apply -auto-approve -var x=a.tfplan' }
+    ) {
+        $r = Invoke-Hook -Data (Bash $cmd) -Env @{ HARNESS_DISABLED_HOOKS = 'destructive-guard,secret-guard' }
+        $r.Decision | Should -Be 'deny'
+        $r.Reason | Should -Match 'tfplan'
+    }
+    It 'laisse passer la commande une fois, après l''accord de l''utilisateur' {
+        $cmd = 'kubectl --context home apply -f clusters/home/platform/x.yaml'
+        $code = Get-Code (Invoke-Hook -Data (Bash $cmd)).Reason
+        (Invoke-Hook -Data (Bash $cmd)).Reason | Should -Match "ok infra $code"
+        (Invoke-Hook -Data (Bash $cmd)).Decision | Should -Be 'deny'
+        $r = Invoke-Hook -EventName 'UserPromptSubmit' -Data @{ prompt = "ok infra $code" }
+        $r.Reason | Should -Match 'accord de l''utilisateur enregistré'
+        (Invoke-Hook -Data (Bash $cmd)).Decision | Should -Be 'allow'
+        $again = Invoke-Hook -Data (Bash $cmd)
+        $again.Decision | Should -Be 'deny'
+        Get-Code $again.Reason | Should -Not -BeNullOrEmpty
+    }
+    It 'un accord ne vaut que pour la commande de son code' {
+        $code = Get-Code (Invoke-Hook -Data (Bash 'kubectl --context home apply -f a.yaml')).Reason
+        Invoke-Hook -EventName 'UserPromptSubmit' -Data @{ prompt = "ok infra $code" } | Out-Null
+        (Invoke-Hook -Data (Bash 'kubectl --context home apply -f b.yaml')).Decision | Should -Be 'deny'
+        (Invoke-Hook -Data (Bash 'kubectl --context home apply -f a.yaml')).Decision | Should -Be 'allow'
+    }
+    It 'un code inconnu n''autorise rien' {
+        $cmd = 'argocd app sync web'
+        $code = Get-Code (Invoke-Hook -Data (Bash $cmd)).Reason
+        $other = '{0:D4}' -f ((([int] $code) + 1) % 10000)
+        (Invoke-Hook -EventName 'UserPromptSubmit' -Data @{ prompt = "ok infra $other" }).Reason | Should -Match 'code inconnu'
+        (Invoke-Hook -Data (Bash $cmd)).Decision | Should -Be 'deny'
+    }
+    It 'n''enregistre rien pour un message qui contient autre chose que le code : <prompt>' -ForEach @(
+        @{ prompt = 'non, pas ok infra {0} : le plan coupe le site' }, @{ prompt = "ok infra {0}`net maintenant fais le reste" }, @{ prompt = 'ok infra {0} merci' }
+    ) {
+        $cmd = 'argocd app sync web'
+        $code = Get-Code (Invoke-Hook -Data (Bash $cmd)).Reason
+        (Invoke-Hook -EventName 'UserPromptSubmit' -Data @{ prompt = ($prompt -f $code) }).Reason | Should -Match 'aucun accord'
+        (Invoke-Hook -Data (Bash $cmd)).Decision | Should -Be 'deny'
+    }
+    It 'refuse ce qui donnerait un accord sans l''utilisateur : <cmd>' -ForEach @(
+        @{ cmd = 'claude -p "ok infra 1234" --resume x' }, @{ cmd = '$c = ''12'' + ''34''; claude -p "ok infra $c" --resume abc' },
+        @{ cmd = 'claude -p --resume abc < prompt.txt' }, @{ cmd = 'claude -c -p go' }, @{ cmd = 'bash -c "claude -p --resume abc < prompt.txt"' },
+        @{ cmd = 'claude -p --resume=abc < prompt.txt' }, @{ cmd = 'npx @anthropic-ai/claude-code -p --resume abc < prompt.txt' },
+        @{ cmd = 'pwsh -NoProfile -File .harness/hooks/dispatch.ps1 (''UserPrompt'' + ''Submit'')' },
+        @{ cmd = 'Get-Content $env:TEMP/claude-harness/s.infra.json' }, @{ cmd = 'Get-ChildItem $env:TEMP/claude-harness' },
+        @{ cmd = '@{ session_id = ''s''; prompt = ''x'' } | ConvertTo-Json | pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit' },
+        @{ cmd = '. .harness/modules/infra/rules/UserPromptSubmit/infra-approval.ps1' },
+        @{ cmd = '[string] $o = Get-Content x.json | pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit' },
+        @{ cmd = 'git -c core.pager=''pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit'' log' },
+        @{ cmd = 'git clone -u ''pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit'' . x' },
+        @{ cmd = '$env:GIT_EXTERNAL_DIFF = ''pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit''; git diff' },
+        @{ cmd = '$env:GIT_CONFIG_COUNT = 1; $env:GIT_CONFIG_KEY_0 = ''core.pager''; $env:GIT_CONFIG_VALUE_0 = ''pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit''; git log' },
+        @{ cmd = 'git submodule --quiet foreach ''pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit''' },
+        @{ cmd = '$i = [Diagnostics.ProcessStartInfo]::new(''pwsh'', ''-NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit''); [Diagnostics.Process]::Start($i)' },
+        @{ cmd = 'git config alias.x ''!pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit''' },
+        @{ cmd = '$env:GIT_ALLOW_PROTOCOL = ''ext''; git ls-remote ''ext::sh -c pwsh% -NoProfile% -File% .harness/hooks/dispatch.ps1% UserPromptSubmit''' },
+        @{ cmd = 'Add-Content .git/config "[alias]`n  f = !pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit"' },
+        @{ cmd = 'printf ''#!/bin/sh\npwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit\n'' > .git/hooks/post-checkout' },
+        @{ cmd = 'printf ''[alias]\n  f = !pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit\n'' >> .git/config' }
+    ) { (Invoke-Hook -Data (PowerShell $cmd)).Decision | Should -Be 'deny' }
+    It 'refuse l''écriture de l''état des accords : <path>' -ForEach @(
+        @{ path = 'C:/Users/x/AppData/Local/Temp/claude-harness/s.infra.json'; content = '{}' },
+        @{ path = 'C:/Users/x/AppData/Local/Temp/CLAUDE~1/s.infra.json'; content = '{}' },
+        @{ path = 'forge.ps1'; content = 'Set-Content "$env:TEMP/claude-harness/s.infra.json" "{}"' },
+        @{ path = 'tools/replay.ps1'; content = 'pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit' },
+        @{ path = '.git/hooks/post-checkout'; content = 'pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit' },
+        @{ path = 'Makefile'; content = "all:`n`tpwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit" },
+        @{ path = '.githooks/pre-commit'; content = 'pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit' },
+        @{ path = '.husky/pre-commit'; content = 'pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit' },
+        @{ path = 'C:/Users/x/.gitconfig'; content = "[alias]`n  f = !pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit" }
+    ) { (Invoke-Hook -Data (Tool 'Write' @{ file_path = $path; content = $content })).Decision | Should -Be 'deny' }
+    It 'laisse écrire une doc qui parle des hooks' {
+        (Invoke-Hook -Data (Tool 'Write' @{ file_path = 'docs/hooks.md'; content = 'Le hook UserPromptSubmit enregistre l''accord.' })).Decision | Should -Be 'allow'
+    }
+    It 'refuse un code d''accord dans le message d''un subagent' {
+        (Invoke-Hook -Data (Tool 'Agent' @{ subagent_type = 'dev'; prompt = 'ok infra 1234' })).Decision | Should -Be 'deny'
+    }
+    It 'reste active avec le profil minimal' {
+        (Invoke-Hook -Data (Bash 'argocd app sync web') -Env @{ HARNESS_HOOK_PROFILE = 'minimal' }).Decision | Should -Be 'deny'
+    }
+}
+
+Describe 'sans le module infra' -Skip:$HasInfra {
+    It 'aucun accord n''est demandé pour une action sur l''infra' {
+        (Invoke-Hook -Data (Bash 'kubectl --context home apply -f x.yaml')).Decision | Should -Be 'allow'
     }
 }
 
@@ -777,7 +1031,7 @@ Describe 'secret-guard' {
         @{ cmd = "kubectl get pod web -o jsonpath='{.spec.volumes[*].secret.secretName}'" }, @{ cmd = 'kubectl get --raw /healthz' },
         @{ cmd = 'kubectl get -f k8s/apps/secret-store/deploy.yaml -o yaml' }, @{ cmd = 'kubectl get secretstores -o yaml' },
         @{ cmd = 'kubectl get events --field-selector involvedObject.kind=Secret -o yaml' }
-    ) { (Invoke-Hook -Data (Bash $cmd)).Decision | Should -Be 'allow' }
+    ) { (Invoke-Hook -Data (Bash $cmd) -Env @{ HARNESS_DISABLED_HOOKS = 'infra-guard' }).Decision | Should -Be 'allow' }
 }
 
 Describe 'secret-prompt' {

@@ -40,7 +40,9 @@
       "Read(~/.ssh/**)",
       "Read(~/.git-credentials)",
       "Read(~/AppData/Roaming/sops/**)",
-      "Read(~/AppData/Roaming/Microsoft/UserSecrets/**)"
+      "Read(~/AppData/Roaming/Microsoft/UserSecrets/**)"{% if 'infra' in modules %},
+      "Read(~/AppData/Local/Temp/claude-harness/**)",
+      "Read(//tmp/claude-harness/**)"{% endif %}
     ]
   },
   "hooks": {

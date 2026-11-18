@@ -30,8 +30,9 @@ docs/                       la doc
   - `argocd` : `app sync`, `app delete`.
 
   Cette liste donne des exemples : dans le doute, c'est une action.
+- **Comment l'accord se donne.** Le hook `infra-guard` refuse tout appel à `kubectl`, `helm`, `tofu`, `terraform`, `argocd` ou `ansible*` qu'il ne reconnaît pas comme une lecture, et donne un code. On montre alors à l'utilisateur la commande exacte, ce qu'elle va changer et la façon de revenir en arrière, puis on lui demande d'écrire `ok infra <code>`, seul dans son message. Ensuite seulement, la même commande, relancée à l'identique, passe une fois. Un agent n'écrit jamais ce code lui-même, ne touche pas à l'état des accords et ne rejoue pas de message : le hook refuse ces gestes au mieux de ses moyens, et les contourner revient à se passer de l'accord. Une action que le hook ne reconnaît pas (par `ssh`, par un script) demande le même accord, donné en clair.
 - **La lecture est libre, sauf celle des secrets** : `tofu plan`, `ansible-playbook --check --diff`, `kubectl get`, `describe`, `logs` et `diff`, `argocd app diff`. On lit avant d'agir, et on montre ce que l'action va changer. Les secrets ne se lisent pas, même pour dépanner (section *Secrets*).
-- **Le cluster est toujours nommé** : `kubectl --context <cluster>`, jamais le contexte courant par défaut. Une commande sans contexte peut viser le mauvais cluster.
+- **Le cluster est toujours nommé, en clair** : `kubectl --context <cluster>`, `helm --kube-context <cluster>`, jamais le contexte courant, ni par défaut ni par `$(kubectl config current-context)`. Une commande sans contexte peut viser le mauvais cluster : `infra-guard` refuse une action qui n'en nomme pas.
 - **Git décrit l'état durable.** Un `kubectl apply` à la main sert à dépanner, et il est suivi d'un commit qui rend le même état à Git, sinon ArgoCD le défait.
 
 ## OpenTofu
