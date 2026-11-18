@@ -73,7 +73,6 @@
         $kubectlFlags = '--insecure-skip-tls-verify', '--match-server-version', '--disable-compression', '--warnings-as-errors', '-h', '--help'
         $helmFlags = '--debug', '--kube-insecure-skip-tls-verify', '-h', '--help'
         $argocdFlags = '--grpc-web', '--insecure', '--plaintext', '--core', '--port-forward', '-h', '--help'
-        $gitCommandKeys = 'alias\.[^=\s]+|core\.(sshcommand|pager|editor|fsmonitor|hookspath)|credential\.[^=\s]*helper|[^=\s]+\.(command|cmd|helper|textconv|program)'
         $kubectlDry ='apply', 'create', 'delete', 'replace', 'patch', 'label', 'annotate', 'set', 'expose', 'run', 'scale', 'autoscale'
 
         # Découpe : chaque segment a ses mots (guillemets retirés, substitution remplacée par $P),
@@ -278,12 +277,16 @@
                 if ($pw) {
                     # Le côté gauche : casts, variables, index et virgules, en un ou plusieurs mots ([string] $x, $a, $b).
                     $piece = "^((\[[\w.,\[\] ]*\])*(\`$[\w:.]*|$P)(\[[^\]]*\]|\.\w+)*,?|\[[\w.,\[\] ]*\]|,)*"; $op = '([-+*/%]|\?\?)?='; $start = "^[\[\`$,$P]"
+                    # Un cast coupé par un espace ([Dictionary[string, int]]) compte aussi.
                     $j = $k
-                    while ($j -lt $w.Count -and $w[$j] -match "$piece`$" -and $w[$j] -match $start) { $j++ }
+                    while ($j -lt $w.Count -and (($w[$j] -match "$piece`$" -and $w[$j] -match $start) -or $w[$j] -match '^\[[^=]*$' -or ($j -gt $k -and $w[$j] -match '^[\w.,\[\] ]*\]$'))) { $j++ }
                     if ($j -lt $w.Count -and ($j -gt $k -or $w[$j] -match $start) -and $w[$j] -match "$piece$op(?<rest>.*)$") {
-                        if (-not $Matches.rest) { $k = $j + 1; continue }
-                        if ($s.Raws[$j] -match "=\s*['`"@]") { return 'text' }
-                        $w[$j] = $Matches.rest; $k = $j; continue
+                        $rest = $Matches.rest
+                        if (-not $rest) { $k = $j + 1; continue }
+                        # Une valeur entre guillemets juste après l'opérateur est du texte ; un index cité ($h['a=']) ne l'est pas.
+                        $rawPiece = "^((\[[\w.,\[\] ]*\])*(\`$[\w:.]*|$P)(\[('[^']*'|`"[^`"]*`"|[^\]'`"])*\]|\.\w+)*,?|\[[\w.,\[\] ]*\]|,)*"
+                        if ($s.Raws[$j] -match "$rawPiece$op\s*['`"@]") { return 'text' }
+                        $w[$j] = $rest; $k = $j; continue
                     }
                 }
                 $name = Get-Program $w[$k]
@@ -317,15 +320,32 @@
                         $j = $e
                     }
                     elseif ($program -eq 'git') {
+                        # Un seul argument passe par le shell ; plusieurs sont des mots, relus avec leurs guillemets.
                         if (($x -eq 'foreach' -and $before -eq 'submodule') -or ($x -eq 'run' -and $before -eq 'bisect')) {
-                            $scripts.Add((@($arguments | Select-Object -Skip ($j + 1) | Where-Object { $_ -notmatch '^--?(recursive|quiet|q)$' }) -join ' ')); break
+                            $idx = @(if ($j + 1 -lt $arguments.Count) { ($j + 1)..($arguments.Count - 1) | Where-Object { $arguments[$_] -notmatch '^--?(recursive|quiet|q)$' } })
+                            if ($idx.Count -eq 1) { $scripts.Add($arguments[$idx[0]]) }
+                            elseif ($idx.Count) { $scripts.Add((@($idx | ForEach-Object { $s.Raws[$k + 1 + $_] }) -join ' ')) }
+                            break
                         }
                         if ($x -in '--exec', '-x' -and $j + 1 -lt $arguments.Count) { $scripts.Add($arguments[$j + 1]); $j++ }
                         elseif ($x -match '^--exec=(.*)$') { $scripts.Add($Matches[1]) }
-                        # Une clé de configuration dont la valeur est une commande : -c clé=valeur, ou git config clé valeur.
-                        elseif ($x -match "^($gitCommandKeys)=!?(?<v>.*)$") { $scripts.Add($Matches.v) }
-                        elseif ($x -match "^($gitCommandKeys)$" -and $j + 1 -lt $arguments.Count -and @($arguments | Select-Object -First $j) -contains 'config') { $scripts.Add(($arguments[$j + 1] -replace '^!', '')); $j++ }
                     }
+                }
+                # Une clé de configuration de git (-c clé=…, git config clé …) hors des clés sûres, ou une option qui donne un
+                # programme (--upload-pack…), peut lancer n'importe quelle commande : git n'est alors plus un programme de texte.
+                if ($program -eq 'git') {
+                    $safeKey = '^(user|init|color|advice|log|status|push|pull|fetch|branch|column|help|i18n|gc|rerere)\.|^core\.(quotepath|autocrlf|safecrlf|longpaths|filemode|ignorecase|eol)(=|$)|^safe\.directory(=|$)|^commit\.(gpgsign|verbose)(=|$)|^merge\.(ff|conflictstyle)(=|$)|^remote\.[^.]+\.(url|fetch|pushurl)(=|$)'
+                    $risky = $false
+                    for ($j = 0; $j -lt $arguments.Count; $j++) {
+                        if ($arguments[$j] -cmatch '^--(upload|receive)-pack(=.*)?$|^--config-env') { $risky = $true }
+                        if ($arguments[$j] -ceq '-c' -and $j + 1 -lt $arguments.Count -and $arguments[$j + 1] -notmatch $safeKey) { $risky = $true }
+                    }
+                    $at = [array]::IndexOf($arguments, 'config')
+                    if ($at -ge 0) {
+                        $key = @($arguments | Select-Object -Skip ($at + 1) | Where-Object { -not $_.StartsWith('-') }) | Select-Object -First 1
+                        if ($key -and $key -notmatch $safeKey) { $risky = $true }
+                    }
+                    if ($risky) { & $flag; return 'other' }
                 }
                 foreach ($sc in $scripts) {
                     if ($Depth -ge 4) { $r.Action = $true; continue }
@@ -461,7 +481,7 @@
         $result = Read-Command $raw $(if ($ctx.ToolName -eq 'PowerShell') { 'pwsh' } else { 'bash' }) 0
         # Un programme ou un script qui vient d'une variable : la commande ne se lit pas jusqu'au bout.
         # Un processus lancé par .NET ([Diagnostics.Process]::Start, StartInfo, InvokeScript) ne se lit pas non plus.
-        if ($ctx.ToolName -eq 'PowerShell' -and $raw -match '(?i)::(start|create\w*|invoke\w*)\b|\.(invoke\w*|addscript|start)\s*\(|startinfo') { $result.Dynamic = $true }
+        if ($ctx.ToolName -eq 'PowerShell' -and $raw -match '(?i)process\]::start|startinfo|\]::create\(\)|\.(invoke\w*|addscript)\s*\(') { $result.Dynamic = $true }
         if ($result.Dynamic) { if ($raw -match $infraName) { $result.Action = $true }; if ($raw -match $hookMark) { $result.Hook = $true } }
         if ($result.Hook) { return $stateDeny }
         if ($result.Destroy) {

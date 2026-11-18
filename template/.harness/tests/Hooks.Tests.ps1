@@ -764,7 +764,10 @@ Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
         @{ cmd = "python3 -c `"import os; os.system('microk8s.kubectl apply -f x.yaml')`"" },
         @{ cmd = "find . -name x.yaml -exec sh -c 'kubectl --context home apply -f `"`$1`"' _ {} \;" },
         @{ cmd = "git -c credential.helper='!kubectl --context home apply -f x.yaml' fetch" },
-        @{ cmd = "git config alias.up '!kubectl --context home apply -f x.yaml'" }
+        @{ cmd = "git config alias.up '!kubectl --context home apply -f x.yaml'" },
+        @{ cmd = "git submodule foreach sh -c 'kubectl --context home apply -f x.yaml'" }, @{ cmd = "git bisect run sh -c 'kubectl --context home apply -f x.yaml'" },
+        @{ cmd = "git -c diff.external='kubectl --context home apply -f x.yaml' diff" },
+        @{ cmd = "git ls-remote --upload-pack='kubectl --context home apply -f x.yaml' origin" }
     ) {
         $r = Invoke-Hook -Data (Bash $cmd)
         $r.Decision | Should -Be 'deny'
@@ -788,7 +791,8 @@ Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
         @{ cmd = '$x ??= kubectl --context home apply -f x.yaml' }, @{ cmd = '${out} = kubectl --context home apply -f x.yaml' },
         @{ cmd = "Start-Process microk8s.kubectl -ArgumentList 'apply','-f','x.yaml'" },
         @{ cmd = '[string] $out = kubectl --context home apply -f x.yaml' }, @{ cmd = '$a,$b = helm --kube-context home upgrade web charts/app' },
-        @{ cmd = '$a, $b = kubectl --context home apply -f x.yaml' },
+        @{ cmd = '$a, $b = kubectl --context home apply -f x.yaml' }, @{ cmd = '[Dictionary[string, int]] $d = kubectl --context home apply -f x.yaml' },
+        @{ cmd = '$h[''a='']=kubectl --context home apply -f x.yaml' },
         @{ cmd = '$p = [Diagnostics.Process]::new(); $p.StartInfo.FileName = ''kubectl''; $p.StartInfo.Arguments = ''--context home apply -f x.yaml''; $p.Start()' }
     ) {
         $r = Invoke-Hook -Data (PowerShell $cmd)
@@ -827,7 +831,9 @@ Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
         @{ cmd = 'helm --kube-context home upgrade web charts/app --set tag=$(git rev-parse HEAD) --dry-run' },
         @{ cmd = "find tofu -name '*.tf'" }, @{ cmd = 'yamllint ansible' }, @{ cmd = 'du -sh tofu/dns/.terraform' },
         @{ cmd = "watch -n 5 'kubectl --context home get pods'" }, @{ cmd = 'echo "${#PODS[@]} pods"' },
-        @{ cmd = "find tofu -name '*.tf' -exec grep -l helm {} +" }, @{ cmd = 'kubectl' }, @{ cmd = 'helm' }
+        @{ cmd = "find tofu -name '*.tf' -exec grep -l helm {} +" }, @{ cmd = 'kubectl' }, @{ cmd = 'helm' },
+        @{ cmd = 'git -C tofu log --oneline' }, @{ cmd = 'git config user.name "helm bot"' },
+        @{ cmd = "git submodule foreach 'git grep -n kubectl || true'" }
     ) { (Invoke-Hook -Data (Bash $cmd)).Decision | Should -Be 'allow' }
     It 'laisse passer la lecture PowerShell <cmd>' -ForEach @(
         @{ cmd = "Get-Content -Raw 'entree.json' | pwsh -NoProfile -File .harness/hooks/dispatch.ps1 PreToolUse" },
@@ -838,7 +844,9 @@ Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
         @{ cmd = 'if (Test-Path tofu/dns) { tofu -chdir=tofu/dns plan -out=dns.tfplan }' },
         @{ cmd = "Get-ChildItem clusters -Recurse -Filter *.yaml | Where-Object { `$_.Name -match 'helm' }" },
         @{ cmd = '$msg=''kubectl apply a échoué''' }, @{ cmd = '$msg="échec de helm upgrade"; Write-Warning $msg' },
-        @{ cmd = '[regex]::Matches((Get-Content runbook.md -Raw), ''kubectl apply'').Count' }, @{ cmd = '[IO.Path]::Combine($PWD, ''tofu'', ''dns'')' }
+        @{ cmd = '[regex]::Matches((Get-Content runbook.md -Raw), ''kubectl apply'').Count' }, @{ cmd = '[IO.Path]::Combine($PWD, ''tofu'', ''dns'')' },
+        @{ cmd = '$sw = [Diagnostics.Stopwatch]::StartNew(); kubectl --context home get pods; $sw.Stop()' },
+        @{ cmd = '$f = [IO.File]::CreateText(''notes-helm.txt''); $f.Close()' }
     ) { (Invoke-Hook -Data (PowerShell $cmd)).Decision | Should -Be 'allow' }
     It 'exige le cluster nommé pour <cmd>' -ForEach @(
         @{ cmd = 'kubectl apply -f x.yaml' }, @{ cmd = 'kubectl -n app scale deploy/web --replicas=2' }, @{ cmd = 'helm upgrade web charts/app' },
@@ -897,7 +905,9 @@ Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
         @{ cmd = 'pwsh -NoProfile -File .harness/hooks/dispatch.ps1 (''UserPrompt'' + ''Submit'')' },
         @{ cmd = 'Get-Content $env:TEMP/claude-harness/s.infra.json' }, @{ cmd = 'Get-ChildItem $env:TEMP/claude-harness' },
         @{ cmd = '@{ session_id = ''s''; prompt = ''x'' } | ConvertTo-Json | pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit' },
-        @{ cmd = '. .harness/modules/infra/rules/UserPromptSubmit/infra-approval.ps1' }
+        @{ cmd = '. .harness/modules/infra/rules/UserPromptSubmit/infra-approval.ps1' },
+        @{ cmd = '[string] $o = Get-Content x.json | pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit' },
+        @{ cmd = 'git -c core.pager=''pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit'' log' }
     ) { (Invoke-Hook -Data (PowerShell $cmd)).Decision | Should -Be 'deny' }
     It 'refuse l''écriture de l''état des accords : <path>' -ForEach @(
         @{ path = 'C:/Users/x/AppData/Local/Temp/claude-harness/s.infra.json'; content = '{}' },
