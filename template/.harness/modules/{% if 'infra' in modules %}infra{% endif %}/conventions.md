@@ -39,12 +39,12 @@ docs/                       la doc
 
 `stop-checks` lance `.harness/modules/infra/lint.ps1` sur les fichiers modifiés, et bloque la fin du tour tant qu'une erreur reste :
 
-- `tofu/` : `tofu fmt -check`, `tofu validate` et `tflint`, dans chaque dossier touché. `validate` a besoin d'un `tofu init` fait une fois dans le dossier ; le lint ne le lance pas, il dit de le faire ;
+- `tofu/` : `tofu fmt -check` sur les `.tf` modifiés, puis `tofu validate` et `tflint` dans chaque dossier où un `.tf` a été modifié, ajouté, supprimé ou renommé. `validate` a besoin d'un `tofu init` fait une fois dans le dossier ; le lint ne le lance pas, il dit de le faire. Une sortie qui cite un `*.tfvars` est masquée, car elle peut en contenir une ligne : l'utilisateur corrige le fichier et relance la commande lui-même ;
 - `clusters/` : `kubeconform -strict` sur les manifestes (les fichiers qui ont une clé `kind:`), avec les schémas des CRD du catalogue datree. Un schéma introuvable est ignoré ;
 - tout le YAML : `yamllint`, avec la config `.yamllint` du dépôt, ou à défaut une config compatible avec ansible-lint ;
-- `ansible/` : `ansible-lint`, dans WSL (distribution `HARNESS_WSL_DISTRO`, `Ubuntu` par défaut).
+- `ansible/` : `ansible-lint --offline`, dans WSL (distribution `HARNESS_WSL_DISTRO`, `Ubuntu` par défaut). Des collections ou des rôles absents : il dit de lancer `ansible-galaxy install -r ansible/requirements.yml` dans WSL, ce qui demande l'accord de l'utilisateur (`infra-guard`).
 
-Les `*.sops.yaml` et les templates de chart (`templates/`) ne passent ni par `yamllint` ni par `kubeconform`. Un outil absent fait échouer le lint, avec la façon de l'installer (`scripts/setup-workstation.ps1 -Role admin` à la racine `services`). Le doctor signale les outils absents.
+Aucun outil ne lit les fichiers protégés du harness, les fichiers de secrets (`protectedPaths` et `secretPaths` de `harness.json`), les `*.sops.yaml` ni les dossiers `templates/`. Un outil absent fait échouer le lint dès qu'il a un fichier à lire, avec la façon de l'installer (`scripts/setup-workstation.ps1 -Role admin` à la racine `services`). Le doctor signale les outils absents.
 
 ## OpenTofu
 
