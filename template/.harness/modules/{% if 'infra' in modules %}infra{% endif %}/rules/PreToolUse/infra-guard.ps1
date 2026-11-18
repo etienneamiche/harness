@@ -20,6 +20,8 @@
         $code = '\bok\s+infra\s+\d{4}\b'
         $stateMark = 'claude-harness(?![\w-])|claude~\d|\.infra\.json'
         $hookMark = 'HarnessHooks|UserPromptSubmit|infra-approval|dispatch\.ps1'
+        # Fichiers qu'un autre programme exécute : hooks et configuration de git, Makefile, package.json, justfile, Taskfile.
+        $runsPath = '(?<![\w.-])\.git(?=[\\/])|(?<![\w.-])\.(gitconfig(?![\w.-])|githooks[\\/]|husky[\\/])|(?<![\w.-])(GNUmakefile|makefile|package\.json|justfile|Taskfile\.ya?ml)(?![\w.-])'
         $stateDeny = @{ Decision = 'deny'; Reason = "l'état des accords d'infra et les messages de l'utilisateur ne se touchent pas : seul l'utilisateur donne un accord, en écrivant ok infra <code> dans le chat." }
 
         if ($ctx.ToolName -in 'Agent', 'Task') {
@@ -33,15 +35,15 @@
             if ($path -match $stateMark -or $written -match "$stateMark|$code") { return $stateDeny }
             # Un script qui appelle les hooks rejouerait un message de l'utilisateur, comme un fichier que git
             # ou un outil de build exécute (hook ou configuration de git, Makefile, package.json).
-            $runs = '\.(ps1|psm1|sh|bash|zsh|cmd|bat|py|js|mjs)$|(^|[\\/])\.git([\\/]|$)|(^|[\\/])(GNUmakefile|[Mm]akefile|package\.json|[Jj]ustfile|Taskfile\.ya?ml)$'
-            if ($path -match $runs -and $written -match $hookMark) { return $stateDeny }
+            if (($path -match '\.(ps1|psm1|sh|bash|zsh|cmd|bat|py|js|mjs)$' -or $path -match $runsPath) -and $written -match $hookMark) { return $stateDeny }
             return
         }
 
         $raw = (Get-Value $ctx.ToolInput 'command' '').Trim()
         # Ce qui donnerait un accord sans l'utilisateur : citer un code, nommer l'état des accords,
-        # reprendre une session (claude --resume rejouerait un message dans celle-ci).
-        if ($raw -match $code -or $raw -match $stateMark -or
+        # reprendre une session (claude --resume rejouerait un message dans celle-ci), nommer un hook
+        # avec un fichier qu'un autre programme exécute (écrit par le shell : > .git/config, New-Item Makefile…).
+        if ($raw -match $code -or $raw -match $stateMark -or ($raw -match $hookMark -and $raw -match $runsPath) -or
             $raw -cmatch '(?<![.\w-])claude(-code)?(\.exe|\.cmd)?\b[^;&|\n]*\s(--resume|--continue|-r|-c)(\s|=|$)') { return $stateDeny }
 
         $P = [string][char]1   # tient la place d'une substitution dans un mot
@@ -277,8 +279,8 @@
                 # Affectation PowerShell ($x = cmd, $x=cmd, [string]$x = cmd, $a[0]=cmd, ${x} = cmd, $x ??= cmd) : la commande
                 # est à droite, sauf une valeur entre guillemets.
                 if ($pw) {
-                    # Une entrée de table (@{ a = 'texte' }) : la valeur se lit comme celle d'une affectation.
-                    if ($k -eq 0 -and $w.Count -ge 2 -and -not $s.Quoted[0] -and $w[0] -match '^[\w-]+$' -and $w[1] -eq '=') {
+                    # Une entrée de table (@{ a = 'texte' }, @{ 'a' = … }) : la valeur se lit comme celle d'une affectation.
+                    if ($k -eq 0 -and $w.Count -ge 2 -and ($s.Quoted[0] -or $w[0] -match '^[\w-]+$') -and $w[1] -eq '=' -and -not $s.Quoted[1]) {
                         if ($w.Count -eq 2) { return 'text' }
                         if ($s.Raws[2] -match "^['`"@]") { return 'text' }
                         $k = 2; continue
@@ -353,7 +355,8 @@
                 # programme (--upload-pack…), peut lancer n'importe quelle commande : git n'est alors plus un programme de texte.
                 if ($program -eq 'git') {
                     $safeKey = '^(user|init|color|advice|log|status|push|pull|fetch|branch|column|help|i18n|gc|rerere|http)\.|^core\.(quotepath|autocrlf|safecrlf|longpaths|filemode|ignorecase|eol)(=|$)|^safe\.directory(=|$)|^commit\.(gpgsign|verbose)(=|$)|^merge\.(ff|conflictstyle)(=|$)|^remote\.[^.]+\.(url|fetch|pushurl)(=|$)'
-                    $risky = $false
+                    # Le transport ext:: lance une commande, en URL comme en valeur de configuration.
+                    $risky = @($arguments | Where-Object { $_ -match '(^|=)ext::' }).Count -gt 0
                     $end = if ($gitAt -ge 0) { $gitAt } else { $arguments.Count }
                     for ($j = 0; $j -lt $end; $j++) {
                         if ($arguments[$j] -cmatch '^--config-env') { $risky = $true }
@@ -511,9 +514,19 @@
         # Un programme ou un script qui vient d'une variable : la commande ne se lit pas jusqu'au bout.
         # Un processus lancé par .NET ([Diagnostics.Process]::Start, StartInfo, InvokeScript) ne se lit pas non plus.
         if ($ctx.ToolName -eq 'PowerShell' -and $raw -match '(?i)process\]::start|startinfo|\]::create\(\)|\.(invoke\w*|addscript)\s*\(') { $result.Dynamic = $true }
-        # Une variable d'environnement qui donne un programme à git ou à son pager (GIT_EXTERNAL_DIFF, GIT_CONFIG_*, PAGER…) non plus.
-        $runEnv = '(?i)\bGIT_(EXTERNAL_DIFF|PAGER|EDITOR|SEQUENCE_EDITOR|SSH|SSH_COMMAND|ASKPASS|CONFIG\w*|PROXY_COMMAND|EXEC_PATH|TEMPLATE_DIR|DIR)\b|\benv:(PAGER|EDITOR|VISUAL|SSH_ASKPASS|LESSOPEN)\b|(?-i:\b(PAGER|EDITOR|VISUAL|SSH_ASKPASS|LESSOPEN)\b)'
-        if ($raw -match $runEnv) { $result.Dynamic = $true }
+        # Une variable d'environnement qui donne un programme à git, à gh ou à un pager (GIT_EXTERNAL_DIFF, GIT_CONFIG_*,
+        # GH_PAGER, PAGER…) : sa valeur se lit comme une commande. Seule compte la variable qui reçoit une valeur
+        # (VAR=…, export VAR=…, $env:VAR = …, SetEnvironmentVariable('VAR', …)).
+        $envNames = 'GIT_(EXTERNAL_DIFF|PAGER|EDITOR|SEQUENCE_EDITOR|SSH|SSH_COMMAND|ASKPASS|CONFIG\w*|PROXY_COMMAND|ALLOW_PROTOCOL)|GH_(PAGER|EDITOR|BROWSER)|PAGER|MANPAGER|EDITOR|VISUAL|BROWSER|SSH_ASKPASS|LESSOPEN|LESSCLOSE'
+        $value = "('[^']*'|`"[^`"]*`"|[^\s;&|)]*)"
+        $setEnv = "(?i)(?<![\w.`$:/\\-])(\`$?env:)?($envNames)\s*(\?\?)?=\s*(?<v>$value)|SetEnvironmentVariable\s*\(\s*['`"]($envNames)['`"]\s*,\s*(?<v>$value)"
+        foreach ($m in [regex]::Matches($raw, $setEnv)) {
+            $v = $m.Groups['v'].Value -replace "^(['`"])(.*)\1$", '$2'
+            if ($v -match $infraName) { $result.Action = $true }
+            if ($v -match $hookMark) { $result.Hook = $true }
+            if (Test-Dynamic $v) { $result.Dynamic = $true }
+        }
+        if ($raw -match "(?i)\b(Set-Item|New-Item|si|ni)\b[^;|&\n]*\benv:[\\/]?($envNames)\b") { $result.Dynamic = $true }
         if ($result.Dynamic) { if ($raw -match $infraName) { $result.Action = $true }; if ($raw -match $hookMark) { $result.Hook = $true } }
         if ($result.Hook) { return $stateDeny }
         if ($result.Destroy) {

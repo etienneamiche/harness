@@ -774,7 +774,10 @@ Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
         @{ cmd = "git clone -c core.sshCommand='kubectl --context home apply -f x.yaml' ssh://h/r" },
         @{ cmd = "git ls-remote --upl='kubectl --context home apply -f x.yaml' origin" },
         @{ cmd = "GIT_EXTERNAL_DIFF='kubectl --context home apply -f x.yaml' git diff" },
-        @{ cmd = "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.pager GIT_CONFIG_VALUE_0='kubectl --context home apply -f x.yaml' git log" }
+        @{ cmd = "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.pager GIT_CONFIG_VALUE_0='kubectl --context home apply -f x.yaml' git log" },
+        @{ cmd = "GIT_ALLOW_PROTOCOL=ext git ls-remote 'ext::sh -c kubectl% --context% home% apply% -f% x.yaml'" },
+        @{ cmd = "git config protocol.ext.allow always && git ls-remote 'ext::sh -c kubectl% --context% home% apply% -f% x.yaml'" },
+        @{ cmd = "git -c core.askPass='kubectl --context home apply -f x.yaml' fetch" }
     ) {
         $r = Invoke-Hook -Data (Bash $cmd)
         $r.Decision | Should -Be 'deny'
@@ -802,7 +805,8 @@ Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
         @{ cmd = '$h[''a='']=kubectl --context home apply -f x.yaml' },
         @{ cmd = '$p = [Diagnostics.Process]::new(); $p.StartInfo.FileName = ''kubectl''; $p.StartInfo.Arguments = ''--context home apply -f x.yaml''; $p.Start()' },
         @{ cmd = '$env:GIT_EXTERNAL_DIFF = ''kubectl --context home apply -f x.yaml''; git diff' },
-        @{ cmd = '$h = @{ out = kubectl --context home apply -f x.yaml }' }
+        @{ cmd = '$h = @{ out = kubectl --context home apply -f x.yaml }' }, @{ cmd = '$h = @{ ''out'' = kubectl --context home apply -f x.yaml }' },
+        @{ cmd = '$env:GIT_ALLOW_PROTOCOL = ''ext''; git ls-remote ''ext::sh -c kubectl% --context% home% apply% -f% x.yaml''' }
     ) {
         $r = Invoke-Hook -Data (PowerShell $cmd)
         $r.Decision | Should -Be 'deny'
@@ -845,7 +849,9 @@ Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
         @{ cmd = "git submodule foreach 'git grep -n kubectl || true'" },
         @{ cmd = 'git grep -c kubectl' }, @{ cmd = 'git ls-files config tofu' }, @{ cmd = 'git log -c --stat -- helm' },
         @{ cmd = 'git -C tofu grep -n "tofu apply"' }, @{ cmd = 'GIT_PAGER=cat git log --oneline' },
-        @{ cmd = "git -c http.extraHeader='X: kubectl' fetch" }
+        @{ cmd = "git -c http.extraHeader='X: kubectl' fetch" }, @{ cmd = "find docs -exec grep -lE 'kubectl|helm' {} +" },
+        @{ cmd = 'GIT_PAGER=cat git log -S helm --oneline' }, @{ cmd = 'echo "$EDITOR"; kubectl --context home get pods' },
+        @{ cmd = 'export EDITOR=vim; kubectl --context home get pods' }, @{ cmd = "rg -n 'GIT_SSH_COMMAND' -- ansible" }
     ) { (Invoke-Hook -Data (Bash $cmd)).Decision | Should -Be 'allow' }
     It 'laisse passer la lecture PowerShell <cmd>' -ForEach @(
         @{ cmd = "Get-Content -Raw 'entree.json' | pwsh -NoProfile -File .harness/hooks/dispatch.ps1 PreToolUse" },
@@ -858,7 +864,8 @@ Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
         @{ cmd = '$msg=''kubectl apply a échoué''' }, @{ cmd = '$msg="échec de helm upgrade"; Write-Warning $msg' },
         @{ cmd = '[regex]::Matches((Get-Content runbook.md -Raw), ''kubectl apply'').Count' }, @{ cmd = '[IO.Path]::Combine($PWD, ''tofu'', ''dns'')' },
         @{ cmd = '$sw = [Diagnostics.Stopwatch]::StartNew(); kubectl --context home get pods; $sw.Stop()' },
-        @{ cmd = '$f = [IO.File]::CreateText(''notes-helm.txt''); $f.Close()' }, @{ cmd = '$a = [ordered] @{ a = ''kubectl apply'' }' }
+        @{ cmd = '$f = [IO.File]::CreateText(''notes-helm.txt''); $f.Close()' }, @{ cmd = '$a = [ordered] @{ a = ''kubectl apply'' }' },
+        @{ cmd = '$env:EDITOR = ''code --wait''; kubectl --context home get pods' }
     ) { (Invoke-Hook -Data (PowerShell $cmd)).Decision | Should -Be 'allow' }
     It 'exige le cluster nommé pour <cmd>' -ForEach @(
         @{ cmd = 'kubectl apply -f x.yaml' }, @{ cmd = 'kubectl -n app scale deploy/web --replicas=2' }, @{ cmd = 'helm upgrade web charts/app' },
@@ -923,7 +930,12 @@ Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
         @{ cmd = 'git clone -u ''pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit'' . x' },
         @{ cmd = '$env:GIT_EXTERNAL_DIFF = ''pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit''; git diff' },
         @{ cmd = '$env:GIT_CONFIG_COUNT = 1; $env:GIT_CONFIG_KEY_0 = ''core.pager''; $env:GIT_CONFIG_VALUE_0 = ''pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit''; git log' },
-        @{ cmd = 'git submodule --quiet foreach ''pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit''' }
+        @{ cmd = 'git submodule --quiet foreach ''pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit''' },
+        @{ cmd = '$i = [Diagnostics.ProcessStartInfo]::new(''pwsh'', ''-NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit''); [Diagnostics.Process]::Start($i)' },
+        @{ cmd = 'git config alias.x ''!pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit''' },
+        @{ cmd = '$env:GIT_ALLOW_PROTOCOL = ''ext''; git ls-remote ''ext::sh -c pwsh% -NoProfile% -File% .harness/hooks/dispatch.ps1% UserPromptSubmit''' },
+        @{ cmd = 'Add-Content .git/config "[alias]`n  f = !pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit"' },
+        @{ cmd = 'printf ''#!/bin/sh\npwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit\n'' > .git/hooks/post-checkout' }
     ) { (Invoke-Hook -Data (PowerShell $cmd)).Decision | Should -Be 'deny' }
     It 'refuse l''écriture de l''état des accords : <path>' -ForEach @(
         @{ path = 'C:/Users/x/AppData/Local/Temp/claude-harness/s.infra.json'; content = '{}' },
