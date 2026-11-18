@@ -777,7 +777,10 @@ Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
         @{ cmd = "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.pager GIT_CONFIG_VALUE_0='kubectl --context home apply -f x.yaml' git log" },
         @{ cmd = "GIT_ALLOW_PROTOCOL=ext git ls-remote 'ext::sh -c kubectl% --context% home% apply% -f% x.yaml'" },
         @{ cmd = "git config protocol.ext.allow always && git ls-remote 'ext::sh -c kubectl% --context% home% apply% -f% x.yaml'" },
-        @{ cmd = "git -c core.askPass='kubectl --context home apply -f x.yaml' fetch" }
+        @{ cmd = "git -c core.askPass='kubectl --context home apply -f x.yaml' fetch" },
+        @{ cmd = "GH_PAGER='kubectl --context home apply -f x.yaml' gh pr list" }, @{ cmd = "GH_EDITOR='kubectl --context home apply -f x.yaml' gh repo view" },
+        @{ cmd = "GH_BROWSER='kubectl --context home apply -f x.yaml' gh repo view" }, @{ cmd = "MANPAGER='kubectl --context home apply -f x.yaml' git help log" },
+        @{ cmd = "BROWSER='kubectl --context home apply -f x.yaml' gh repo view --web" }, @{ cmd = "LESSCLOSE='kubectl --context home apply -f x.yaml' less x.txt" }
     ) {
         $r = Invoke-Hook -Data (Bash $cmd)
         $r.Decision | Should -Be 'deny'
@@ -806,7 +809,9 @@ Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
         @{ cmd = '$p = [Diagnostics.Process]::new(); $p.StartInfo.FileName = ''kubectl''; $p.StartInfo.Arguments = ''--context home apply -f x.yaml''; $p.Start()' },
         @{ cmd = '$env:GIT_EXTERNAL_DIFF = ''kubectl --context home apply -f x.yaml''; git diff' },
         @{ cmd = '$h = @{ out = kubectl --context home apply -f x.yaml }' }, @{ cmd = '$h = @{ ''out'' = kubectl --context home apply -f x.yaml }' },
-        @{ cmd = '$env:GIT_ALLOW_PROTOCOL = ''ext''; git ls-remote ''ext::sh -c kubectl% --context% home% apply% -f% x.yaml''' }
+        @{ cmd = '$env:GIT_ALLOW_PROTOCOL = ''ext''; git ls-remote ''ext::sh -c kubectl% --context% home% apply% -f% x.yaml''' },
+        @{ cmd = '$v = ''kubectl --context home apply -f x.yaml''; Set-Item env:GIT_PAGER $v; git log' },
+        @{ cmd = '[Environment]::SetEnvironmentVariable(''GIT_PAGER'', ''kubectl --context home apply -f x.yaml''); git log' }
     ) {
         $r = Invoke-Hook -Data (PowerShell $cmd)
         $r.Decision | Should -Be 'deny'
@@ -935,7 +940,8 @@ Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
         @{ cmd = 'git config alias.x ''!pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit''' },
         @{ cmd = '$env:GIT_ALLOW_PROTOCOL = ''ext''; git ls-remote ''ext::sh -c pwsh% -NoProfile% -File% .harness/hooks/dispatch.ps1% UserPromptSubmit''' },
         @{ cmd = 'Add-Content .git/config "[alias]`n  f = !pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit"' },
-        @{ cmd = 'printf ''#!/bin/sh\npwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit\n'' > .git/hooks/post-checkout' }
+        @{ cmd = 'printf ''#!/bin/sh\npwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit\n'' > .git/hooks/post-checkout' },
+        @{ cmd = 'printf ''[alias]\n  f = !pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit\n'' >> .git/config' }
     ) { (Invoke-Hook -Data (PowerShell $cmd)).Decision | Should -Be 'deny' }
     It 'refuse l''écriture de l''état des accords : <path>' -ForEach @(
         @{ path = 'C:/Users/x/AppData/Local/Temp/claude-harness/s.infra.json'; content = '{}' },
@@ -943,7 +949,10 @@ Describe 'infra-guard et infra-approval (module infra)' -Skip:(-not $HasInfra) {
         @{ path = 'forge.ps1'; content = 'Set-Content "$env:TEMP/claude-harness/s.infra.json" "{}"' },
         @{ path = 'tools/replay.ps1'; content = 'pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit' },
         @{ path = '.git/hooks/post-checkout'; content = 'pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit' },
-        @{ path = 'Makefile'; content = "all:`n`tpwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit" }
+        @{ path = 'Makefile'; content = "all:`n`tpwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit" },
+        @{ path = '.githooks/pre-commit'; content = 'pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit' },
+        @{ path = '.husky/pre-commit'; content = 'pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit' },
+        @{ path = 'C:/Users/x/.gitconfig'; content = "[alias]`n  f = !pwsh -NoProfile -File .harness/hooks/dispatch.ps1 UserPromptSubmit" }
     ) { (Invoke-Hook -Data (Tool 'Write' @{ file_path = $path; content = $content })).Decision | Should -Be 'deny' }
     It 'laisse écrire une doc qui parle des hooks' {
         (Invoke-Hook -Data (Tool 'Write' @{ file_path = 'docs/hooks.md'; content = 'Le hook UserPromptSubmit enregistre l''accord.' })).Decision | Should -Be 'allow'
