@@ -31,8 +31,10 @@
             $written = @((Get-Value $ctx.ToolInput 'content' ''), (Get-Value $ctx.ToolInput 'new_string' ''), (Get-Value $ctx.ToolInput 'new_source' '')) +
                 @(@(Get-Value $ctx.ToolInput 'edits' @()) | ForEach-Object { Get-Value $_ 'new_string' '' }) -join "`n"
             if ($path -match $stateMark -or $written -match "$stateMark|$code") { return $stateDeny }
-            # Un script qui appelle les hooks rejouerait un message de l'utilisateur.
-            if ($path -match '\.(ps1|psm1|sh|bash|zsh|cmd|bat|py|js|mjs)$' -and $written -match $hookMark) { return $stateDeny }
+            # Un script qui appelle les hooks rejouerait un message de l'utilisateur, comme un fichier que git
+            # ou un outil de build exécute (hook ou configuration de git, Makefile, package.json).
+            $runs = '\.(ps1|psm1|sh|bash|zsh|cmd|bat|py|js|mjs)$|(^|[\\/])\.git([\\/]|$)|(^|[\\/])(GNUmakefile|[Mm]akefile|package\.json|[Jj]ustfile|Taskfile\.ya?ml)$'
+            if ($path -match $runs -and $written -match $hookMark) { return $stateDeny }
             return
         }
 
@@ -275,6 +277,12 @@
                 # Affectation PowerShell ($x = cmd, $x=cmd, [string]$x = cmd, $a[0]=cmd, ${x} = cmd, $x ??= cmd) : la commande
                 # est à droite, sauf une valeur entre guillemets.
                 if ($pw) {
+                    # Une entrée de table (@{ a = 'texte' }) : la valeur se lit comme celle d'une affectation.
+                    if ($k -eq 0 -and $w.Count -ge 2 -and -not $s.Quoted[0] -and $w[0] -match '^[\w-]+$' -and $w[1] -eq '=') {
+                        if ($w.Count -eq 2) { return 'text' }
+                        if ($s.Raws[2] -match "^['`"@]") { return 'text' }
+                        $k = 2; continue
+                    }
                     # Le côté gauche : casts, variables, index et virgules, en un ou plusieurs mots ([string] $x, $a, $b).
                     $piece = "^((\[[\w.,\[\] ]*\])*(\`$[\w:.]*|$P)(\[[^\]]*\]|\.\w+)*,?|\[[\w.,\[\] ]*\]|,)*"; $op = '([-+*/%]|\?\?)?='; $start = "^[\[\`$,$P]"
                     # Un cast coupé par un espace ([Dictionary[string, int]]) compte aussi.
@@ -311,6 +319,15 @@
                 # Sauf la commande qu'il lance (find -exec, git submodule foreach, git rebase --exec, un alias git),
                 # relue comme un script Bash, et un script qu'il écrit (New-Item x.ps1 -Value …).
                 $scripts = [Collections.Generic.List[string]]::new()
+                # La sous-commande de git : le premier mot après ses options globales (-C <dossier>, -c <clé>…).
+                $gitAt = -1
+                if ($program -eq 'git') {
+                    for ($j = 0; $j -lt $arguments.Count; $j++) {
+                        if ($arguments[$j] -cin '-c', '-C', '--git-dir', '--work-tree', '--namespace', '--super-prefix', '--attr-source', '--config-env') { $j++; continue }
+                        if (-not $arguments[$j].StartsWith('-')) { $gitAt = $j; break }
+                    }
+                }
+                $gitSub = if ($gitAt -ge 0) { $arguments[$gitAt].ToLowerInvariant() } else { '' }
                 for ($j = 0; $j -lt $arguments.Count; $j++) {
                     $x = $arguments[$j]; $before = if ($j) { $arguments[$j - 1] } else { '' }
                     if ($program -eq 'find' -and $x -match '^-(exec|execdir|ok|okdir)$') {
@@ -321,28 +338,40 @@
                     }
                     elseif ($program -eq 'git') {
                         # Un seul argument passe par le shell ; plusieurs sont des mots, relus avec leurs guillemets.
-                        if (($x -eq 'foreach' -and $before -eq 'submodule') -or ($x -eq 'run' -and $before -eq 'bisect')) {
+                        if ($j -gt $gitAt -and (($x -eq 'foreach' -and $gitSub -eq 'submodule') -or ($x -eq 'run' -and $gitSub -eq 'bisect'))) {
                             $idx = @(if ($j + 1 -lt $arguments.Count) { ($j + 1)..($arguments.Count - 1) | Where-Object { $arguments[$_] -notmatch '^--?(recursive|quiet|q)$' } })
                             if ($idx.Count -eq 1) { $scripts.Add($arguments[$idx[0]]) }
                             elseif ($idx.Count) { $scripts.Add((@($idx | ForEach-Object { $s.Raws[$k + 1 + $_] }) -join ' ')) }
                             break
                         }
-                        if ($x -in '--exec', '-x' -and $j + 1 -lt $arguments.Count) { $scripts.Add($arguments[$j + 1]); $j++ }
-                        elseif ($x -match '^--exec=(.*)$') { $scripts.Add($Matches[1]) }
+                        # git accepte une option longue abrégée (--exe pour --exec).
+                        if ($j -gt $gitAt -and $x -cmatch '^(--e(x(e(c)?)?)?|-x)$' -and $j + 1 -lt $arguments.Count) { $scripts.Add($arguments[$j + 1]); $j++ }
+                        elseif ($j -gt $gitAt -and $x -cmatch '^--e(x(e(c)?)?)?=(.*)$') { $scripts.Add($Matches[4]) }
                     }
                 }
                 # Une clé de configuration de git (-c clé=…, git config clé …) hors des clés sûres, ou une option qui donne un
                 # programme (--upload-pack…), peut lancer n'importe quelle commande : git n'est alors plus un programme de texte.
                 if ($program -eq 'git') {
-                    $safeKey = '^(user|init|color|advice|log|status|push|pull|fetch|branch|column|help|i18n|gc|rerere)\.|^core\.(quotepath|autocrlf|safecrlf|longpaths|filemode|ignorecase|eol)(=|$)|^safe\.directory(=|$)|^commit\.(gpgsign|verbose)(=|$)|^merge\.(ff|conflictstyle)(=|$)|^remote\.[^.]+\.(url|fetch|pushurl)(=|$)'
+                    $safeKey = '^(user|init|color|advice|log|status|push|pull|fetch|branch|column|help|i18n|gc|rerere|http)\.|^core\.(quotepath|autocrlf|safecrlf|longpaths|filemode|ignorecase|eol)(=|$)|^safe\.directory(=|$)|^commit\.(gpgsign|verbose)(=|$)|^merge\.(ff|conflictstyle)(=|$)|^remote\.[^.]+\.(url|fetch|pushurl)(=|$)'
                     $risky = $false
-                    for ($j = 0; $j -lt $arguments.Count; $j++) {
-                        if ($arguments[$j] -cmatch '^--(upload|receive)-pack(=.*)?$|^--config-env') { $risky = $true }
-                        if ($arguments[$j] -ceq '-c' -and $j + 1 -lt $arguments.Count -and $arguments[$j + 1] -notmatch $safeKey) { $risky = $true }
+                    $end = if ($gitAt -ge 0) { $gitAt } else { $arguments.Count }
+                    for ($j = 0; $j -lt $end; $j++) {
+                        if ($arguments[$j] -cmatch '^--config-env') { $risky = $true }
+                        if ($arguments[$j] -ceq '-c' -and $j + 1 -lt $end -and $arguments[$j + 1] -notmatch $safeKey) { $risky = $true }
                     }
-                    $at = [array]::IndexOf($arguments, 'config')
-                    if ($at -ge 0) {
-                        $key = @($arguments | Select-Object -Skip ($at + 1) | Where-Object { -not $_.StartsWith('-') }) | Select-Object -First 1
+                    for ($j = $gitAt + 1; $gitAt -ge 0 -and $j -lt $arguments.Count; $j++) {
+                        $x = $arguments[$j]
+                        # --upload-pack et --receive-pack, même abrégées ; -u (clone, ls-remote) ; -c et --config de clone.
+                        if ($x -cmatch '^--(u(p(l(o(a(d(-(p(a(c(k)?)?)?)?)?)?)?)?)?)?|r(e(c(e(i(v(e(-(p(a(c(k)?)?)?)?)?)?)?)?)?)?)?)(=|$)') { $risky = $true }
+                        if ($gitSub -in 'clone', 'ls-remote' -and $x -cmatch '^-[a-zA-Z]*u') { $risky = $true }
+                        if ($gitSub -eq 'clone') {
+                            if ($x -cmatch '^--c(o(n(f(i(g)?)?)?)?)?=(.*)$') { if ($Matches[6] -notmatch $safeKey) { $risky = $true } }
+                            elseif ($x -cmatch '^(-c|--c(o(n(f(i(g)?)?)?)?)?)$') { if ($j + 1 -ge $arguments.Count -or $arguments[$j + 1] -notmatch $safeKey) { $risky = $true } }
+                            elseif ($x -cmatch '^-[a-zA-Z]*c') { $risky = $true }
+                        }
+                    }
+                    if ($gitSub -eq 'config') {
+                        $key = @($arguments | Select-Object -Skip ($gitAt + 1) | Where-Object { -not $_.StartsWith('-') }) | Select-Object -First 1
                         if ($key -and $key -notmatch $safeKey) { $risky = $true }
                     }
                     if ($risky) { & $flag; return 'other' }
@@ -482,6 +511,9 @@
         # Un programme ou un script qui vient d'une variable : la commande ne se lit pas jusqu'au bout.
         # Un processus lancé par .NET ([Diagnostics.Process]::Start, StartInfo, InvokeScript) ne se lit pas non plus.
         if ($ctx.ToolName -eq 'PowerShell' -and $raw -match '(?i)process\]::start|startinfo|\]::create\(\)|\.(invoke\w*|addscript)\s*\(') { $result.Dynamic = $true }
+        # Une variable d'environnement qui donne un programme à git ou à son pager (GIT_EXTERNAL_DIFF, GIT_CONFIG_*, PAGER…) non plus.
+        $runEnv = '(?i)\bGIT_(EXTERNAL_DIFF|PAGER|EDITOR|SEQUENCE_EDITOR|SSH|SSH_COMMAND|ASKPASS|CONFIG\w*|PROXY_COMMAND|EXEC_PATH|TEMPLATE_DIR|DIR)\b|\benv:(PAGER|EDITOR|VISUAL|SSH_ASKPASS|LESSOPEN)\b|(?-i:\b(PAGER|EDITOR|VISUAL|SSH_ASKPASS|LESSOPEN)\b)'
+        if ($raw -match $runEnv) { $result.Dynamic = $true }
         if ($result.Dynamic) { if ($raw -match $infraName) { $result.Action = $true }; if ($raw -match $hookMark) { $result.Hook = $true } }
         if ($result.Hook) { return $stateDeny }
         if ($result.Destroy) {
