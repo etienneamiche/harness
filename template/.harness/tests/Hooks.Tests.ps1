@@ -1547,15 +1547,18 @@ exit [int] $code
         $fmt[0] | Should -Not -Match 'other|tfvars'
     }
     It 'une sortie qui cite un *.tfvars est masquée (<check>)' -ForEach @(
-        @{ check = 'tofu validate'; extra = @{ FAKE_TOFU_VALIDATE_EXIT = '1'; FAKE_TOFU_VALIDATE_OUT = "Error: Invalid expression`n  on terraform.tfvars line 2:`n   2: token = `"FAUX-SECRET-42`" oops" } }
-        @{ check = 'tflint'; extra = @{ FAKE_TFLINT_EXIT = '1'; FAKE_TFLINT_OUT = "Error: terraform.tfvars:2,9: token = `"FAUX-SECRET-42`"" } }
-        @{ check = 'tofu validate'; extra = @{ FAKE_TOFU_VALIDATE_EXIT = '1'; FAKE_TOFU_VALIDATE_OUT = "Run tofu init. secrets.auto.tfvars.json: `"FAUX-SECRET-42`"" } }
+        @{ check = 'tofu validate'; extra = @{ FAKE_TOFU_VALIDATE_EXIT = '1'; FAKE_TOFU_VALIDATE_OUT = "Error: Invalid expression`n  on terraform.tfvars line 2:`n   2: zone = `"{valeur}`" oops" } }
+        @{ check = 'tflint'; extra = @{ FAKE_TFLINT_EXIT = '1'; FAKE_TFLINT_OUT = "Error: terraform.tfvars:2,9: zone = `"{valeur}`"" } }
+        @{ check = 'tofu validate'; extra = @{ FAKE_TOFU_VALIDATE_EXIT = '1'; FAKE_TOFU_VALIDATE_OUT = "Run tofu init. secrets.auto.tfvars.json: `"{valeur}`"" } }
     ) {
+        # Valeur assemblée à l'exécution : rien que gitleaks puisse prendre pour un secret.
+        $valeur = 'VALEUR' + '-MASQUEE-' + (Get-Random -Maximum 1000)
+        $sortie = @{}; foreach ($k in $extra.Keys) { $sortie[$k] = $extra[$k].Replace('{valeur}', $valeur) }
         Set-File 'tofu/dns/main.tf' 'terraform {}'
-        $r = Invoke-Lint @('tofu') -Tools 'tofu', 'tflint' -Env $extra
+        $r = Invoke-Lint @('tofu') -Tools 'tofu', 'tflint' -Env $sortie
         $r.Code | Should -Be 1
         $r.Output | Should -Match "$check \(tofu/dns\) : erreur dans un fichier \*\.tfvars"
-        $r.Output | Should -Not -Match 'FAUX-SECRET'
+        $r.Output | Should -Not -Match ([regex]::Escape($valeur))
     }
     It 'ansible-lint : des collections absentes, il dit de lancer ansible-galaxy' {
         Set-File 'ansible/site.yml'
