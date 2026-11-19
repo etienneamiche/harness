@@ -20,6 +20,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versions : [s
 - **Bloc `.gitignore` du harness** : `*.tfstate`, `*.tfstate.*`, `*.tfplan`, `*.tfvars`, `*.tfvars.json` et `.terraform/` y sont ignorés, dans tous les projets.
 
 ### Corrigé
+- **`/homelab`** : il ne promet plus une lecture de l'état réel par des wrappers du module `infra`, qui n'existent pas. Il donne la commande à lancer soi-même ; une lecture par le skill attend la phase 11 de la roadmap de `services` (#80).
 - **Règles des modules** : le dispatcher ne les chargeait jamais. `Get-ChildItem` sur `.harness/modules/*/rules/<Événement>` avec `-Filter` rendait le dossier lui-même, pas ses fichiers. Aucun module n'avait encore de règle ; `infra-guard` est la première (#72).
 
 ### Modifié
