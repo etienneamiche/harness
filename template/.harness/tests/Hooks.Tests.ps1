@@ -32,9 +32,9 @@ BeforeAll {
         $payload = @{ hook_event_name = $EventName; session_id = $script:SessionId; cwd = (Split-Path (Split-Path (Split-Path $Dispatch))) } + $Data
         $json = if ($PSBoundParameters.ContainsKey('Raw')) { $Raw } else { $payload | ConvertTo-Json -Depth 10 -Compress }
         $saved = @{}
-        foreach ($k in $Env.Keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k); [Environment]::SetEnvironmentVariable($k, $Env[$k]) }
+        foreach ($k in $Env.Keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k); Set-Item "env:$k" $Env[$k] }
         try { $out = $json | pwsh -NoProfile -NonInteractive -File $Dispatch $EventName }
-        finally { foreach ($k in $saved.Keys) { [Environment]::SetEnvironmentVariable($k, $saved[$k]) } }
+        finally { foreach ($k in $saved.Keys) { Set-Item "env:$k" $saved[$k] } }
 
         $text = ($out | Out-String).Trim()
         if (-not $text) { return [pscustomobject]@{ Decision = 'allow'; Reason = '' } }
@@ -618,9 +618,9 @@ Describe 'merge-pr.ps1' {
         function Invoke-MergePr([string[]] $ScriptArgs, [hashtable] $Env = @{ HARNESS_TEST_DRYRUN = '1' }) {
             $vars = @{ HARNESS_TEST_PR_JSON = $script:PrFile; HARNESS_TEST_GH_LOGIN = 'me' } + $Env
             $saved = @{}
-            foreach ($k in $vars.Keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k); [Environment]::SetEnvironmentVariable($k, $vars[$k]) }
+            foreach ($k in $vars.Keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k); Set-Item "env:$k" $vars[$k] }
             try { $out = pwsh -NoProfile -NonInteractive -File $script:MergeScript @ScriptArgs 2>&1 | Out-String; $code = $LASTEXITCODE }
-            finally { foreach ($k in $saved.Keys) { [Environment]::SetEnvironmentVariable($k, $saved[$k]) } }
+            finally { foreach ($k in $saved.Keys) { Set-Item "env:$k" $saved[$k] } }
             [pscustomobject]@{ Code = $code; Output = $out }
         }
         $script:Ok = @('-Pr', '7', '-Subject', 'feat(api): add export (#7)')
@@ -1237,21 +1237,27 @@ Describe 'doctor -Fix' {
             $fakeHome = Join-Path $script:Fake 'home'
             $vars = @{ PATH = (Join-Path $script:Fake 'bin') + [IO.Path]::PathSeparator + $env:PATH; HOME = $fakeHome; USERPROFILE = $fakeHome } + $Env
             $saved = @{}
-            foreach ($k in $vars.Keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k); [Environment]::SetEnvironmentVariable($k, $vars[$k]) }
+            foreach ($k in $vars.Keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k); Set-Item "env:$k" $vars[$k] }
             Remove-Item $script:Calls -ErrorAction SilentlyContinue
             try { pwsh -NoProfile -NonInteractive -File (Join-Path $Project '.harness' 'tools' 'doctor.ps1') -Fix -Offline *>&1 | Out-String }
-            finally { foreach ($k in $saved.Keys) { [Environment]::SetEnvironmentVariable($k, $saved[$k]) } }
+            finally { foreach ($k in $saved.Keys) { Set-Item "env:$k" $saved[$k] } }
         }
         function Get-Calls { if (Test-Path $script:Calls) { Get-Content $script:Calls } else { @() } }
 
         $script:Copy = New-ProjectCopy
         $script:Manifest = Join-Path $script:Copy '.harness' 'manifest.json'
         $script:ManifestBefore = Get-FileHash $script:Manifest
+        $script:EnvBefore = foreach ($k in 'HOME', 'USERPROFILE') { "$k=$(Test-Path "env:$k")=$([Environment]::GetEnvironmentVariable($k))" }
         $script:Output = Invoke-DoctorFix $script:Copy @{ HARNESS_SKIP_PLUGINS = '1' }
+        $script:EnvAfter = foreach ($k in 'HOME', 'USERPROFILE') { "$k=$(Test-Path "env:$k")=$([Environment]::GetEnvironmentVariable($k))" }
         $script:SkipCalls = @(Get-Calls)
     }
     AfterAll { Remove-Item $script:Fake -Recurse -Force -ErrorAction SilentlyContinue }
 
+    It 'remet HOME et USERPROFILE comme avant : une variable absente ne reste pas vide' {
+        # Une variable vide n'est pas absente : avec HOME vide, git ne trouve plus ~/.gitconfig.
+        $script:EnvAfter | Should -Be $script:EnvBefore
+    }
     It 'répare le bloc de .gitignore' {
         Get-Content (Join-Path $script:Copy '.gitignore') -Raw | Should -Match '# >>> harness'
     }
@@ -1291,6 +1297,9 @@ Describe 'lint infra (module infra)' -Skip:(-not $HasInfra) {
         New-Item -ItemType Directory -Force $Bin | Out-Null
         Copy-Item (Join-Path $script:Root '.harness') $Repo -Recurse
         git -C $Repo init -q
+        # Identité locale : les commits du test ne dépendent pas du ~/.gitconfig du poste.
+        git -C $Repo config user.name harness-test
+        git -C $Repo config user.email harness-test@example.invalid
         Set-Content (Join-Path $Repo '.gitignore') '_bin/'
         $script:Lint = Join-Path $Repo '.harness' 'modules' 'infra' 'lint.ps1'
         $script:Log = Join-Path $Bin 'calls.log'
@@ -1318,9 +1327,9 @@ exit [int] $code
             # Le faux wsl connaît les distributions Ubuntu et Debian (wsl -l -q).
             $Env = @{ Path = "$dir;$PSHOME;$GitDir"; FAKE_LOG = $Log; FAKE_WSL_L_OUT = "Ubuntu`nDebian" } + $Env
             $saved = @{}
-            foreach ($k in $Env.Keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k); [Environment]::SetEnvironmentVariable($k, $Env[$k]) }
+            foreach ($k in $Env.Keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k); Set-Item "env:$k" $Env[$k] }
             try { $out = & (Join-Path $PSHOME 'pwsh') -NoProfile -NonInteractive -File $Lint @LintArgs 2>&1 | Out-String; $code = $LASTEXITCODE }
-            finally { foreach ($k in $saved.Keys) { [Environment]::SetEnvironmentVariable($k, $saved[$k]) } }
+            finally { foreach ($k in $saved.Keys) { Set-Item "env:$k" $saved[$k] } }
             [pscustomobject]@{ Code = $code; Output = $out; Calls = @(if (Test-Path $Log) { Get-Content $Log }) }
         }
         function Set-File([string] $Rel, [string] $Text = 'x: 1') {
