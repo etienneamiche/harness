@@ -19,6 +19,42 @@ BeforeAll {
     $script:Root = (Resolve-Path (Join-Path $PSScriptRoot '..' '..')).Path
     $script:Dispatch = Join-Path $Root '.harness' 'hooks' 'dispatch.ps1'
 
+    # Variables d'environnement : Save-Env relève leur état (absente, vide ou définie), Set-EnvVar
+    # pose une valeur ($null retire la variable) et Restore-Env remet l'état relevé. Pas de
+    # [Environment]::SetEnvironmentVariable(…, $null) : PowerShell y passe $null sous forme de '',
+    # et la variable reste présente et vide (avec HOME vide, git ne trouve plus ~/.gitconfig).
+    function Save-Env([string[]] $Names) {
+        foreach ($n in $Names) { [pscustomobject]@{ Name = $n; Present = Test-Path "env:$n"; Value = [Environment]::GetEnvironmentVariable($n) } }
+    }
+    function Set-EnvVar([string] $Name, $Value) {
+        if ($null -eq $Value) { Remove-Item "env:$Name" -ErrorAction SilentlyContinue } else { Set-Item "env:$Name" ([string] $Value) }
+    }
+    function Restore-Env([object[]] $State) {
+        foreach ($s in $State) { Set-EnvVar $s.Name ($s.Present ? $s.Value : $null) }
+    }
+    # Lance $Block avec les variables de $Variables, puis remet l'environnement comme avant, même
+    # si une pose ou le bloc échoue. Le bloc rend son résultat par sa sortie.
+    function Invoke-WithEnv([System.Collections.IDictionary] $Variables, [scriptblock] $Block) {
+        $__state = @(Save-Env @($Variables.Keys))
+        try {
+            foreach ($__name in $Variables.Keys) { Set-EnvVar $__name $Variables[$__name] }
+            & $Block
+        }
+        finally { Restore-Env $__state }
+    }
+
+    # Git sans la config du poste ni celle du système (signature, fins de ligne, identité…) : les
+    # dépôts jetables des tests se comportent de même partout. Remis comme avant en fin de fichier.
+    $script:GitConfig = Join-Path ([IO.Path]::GetTempPath()) "harness-gitconfig-$([guid]::NewGuid())"
+    Set-Content $script:GitConfig ''
+    $script:GitIsolation = @{
+        GIT_CONFIG_GLOBAL = $script:GitConfig; GIT_CONFIG_NOSYSTEM = '1'; GIT_CONFIG_COUNT = $null; GIT_CONFIG_PARAMETERS = $null
+        GIT_AUTHOR_NAME = 'harness-test'; GIT_AUTHOR_EMAIL = 'harness-test@example.invalid'
+        GIT_COMMITTER_NAME = 'harness-test'; GIT_COMMITTER_EMAIL = 'harness-test@example.invalid'
+    }
+    $script:GitEnvBefore = @(Save-Env @($script:GitIsolation.Keys))
+    foreach ($k in $script:GitIsolation.Keys) { Set-EnvVar $k $script:GitIsolation[$k] }
+
     function Invoke-Hook {
         param(
             [string] $EventName = 'PreToolUse',
@@ -31,10 +67,7 @@ BeforeAll {
         if (-not $Env.ContainsKey('HARNESS_HOOK_PROFILE')) { $Env = $Env + @{ HARNESS_HOOK_PROFILE = 'standard' } }
         $payload = @{ hook_event_name = $EventName; session_id = $script:SessionId; cwd = (Split-Path (Split-Path (Split-Path $Dispatch))) } + $Data
         $json = if ($PSBoundParameters.ContainsKey('Raw')) { $Raw } else { $payload | ConvertTo-Json -Depth 10 -Compress }
-        $saved = @{}
-        foreach ($k in $Env.Keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k); [Environment]::SetEnvironmentVariable($k, $Env[$k]) }
-        try { $out = $json | pwsh -NoProfile -NonInteractive -File $Dispatch $EventName }
-        finally { foreach ($k in $saved.Keys) { [Environment]::SetEnvironmentVariable($k, $saved[$k]) } }
+        $out = Invoke-WithEnv $Env { $json | pwsh -NoProfile -NonInteractive -File $Dispatch $EventName }
 
         $text = ($out | Out-String).Trim()
         if (-not $text) { return [pscustomobject]@{ Decision = 'allow'; Reason = '' } }
@@ -617,11 +650,10 @@ Describe 'merge-pr.ps1' {
         # Lance le script en mode essai (aucune fusion réelle), avec la PR et le compte GitHub simulés.
         function Invoke-MergePr([string[]] $ScriptArgs, [hashtable] $Env = @{ HARNESS_TEST_DRYRUN = '1' }) {
             $vars = @{ HARNESS_TEST_PR_JSON = $script:PrFile; HARNESS_TEST_GH_LOGIN = 'me' } + $Env
-            $saved = @{}
-            foreach ($k in $vars.Keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k); [Environment]::SetEnvironmentVariable($k, $vars[$k]) }
-            try { $out = pwsh -NoProfile -NonInteractive -File $script:MergeScript @ScriptArgs 2>&1 | Out-String; $code = $LASTEXITCODE }
-            finally { foreach ($k in $saved.Keys) { [Environment]::SetEnvironmentVariable($k, $saved[$k]) } }
-            [pscustomobject]@{ Code = $code; Output = $out }
+            Invoke-WithEnv $vars {
+                $out = pwsh -NoProfile -NonInteractive -File $script:MergeScript @ScriptArgs 2>&1 | Out-String
+                [pscustomobject]@{ Code = $LASTEXITCODE; Output = $out }
+            }
         }
         $script:Ok = @('-Pr', '7', '-Subject', 'feat(api): add export (#7)')
     }
@@ -1099,6 +1131,41 @@ Describe 'règles d''information' {
     }
 }
 
+Describe 'remise de l''environnement (Invoke-WithEnv)' {
+    BeforeAll {
+        # Trois témoins : absent, vide et défini.
+        $script:Witness = @{ ZZ_HARNESS_ABSENT = $null; ZZ_HARNESS_EMPTY = ''; ZZ_HARNESS_SET = 'avant' }
+        function Get-EnvState { foreach ($n in $script:Witness.Keys | Sort-Object) { "$n=$(Test-Path "env:$n")=$([Environment]::GetEnvironmentVariable($n))" } }
+    }
+    BeforeEach { foreach ($n in $script:Witness.Keys) { Set-EnvVar $n $script:Witness[$n] } }
+    AfterAll { foreach ($n in $script:Witness.Keys) { Set-EnvVar $n $null } }
+
+    It 'remet chaque témoin comme avant (valeur posée : <label>)' -ForEach @(
+        @{ label = 'définie'; value = 'x' }, @{ label = '$null'; value = $null }, @{ label = 'vide'; value = '' }
+    ) {
+        $before = @(Get-EnvState)
+        $vars = @{}; foreach ($n in $script:Witness.Keys) { $vars[$n] = $value }
+        Invoke-WithEnv $vars { } | Out-Null
+        @(Get-EnvState) | Should -Be $before
+    }
+    It 'pose les valeurs pendant le bloc, vues par un processus enfant' {
+        Invoke-WithEnv @{ ZZ_HARNESS_SET = 'pendant'; ZZ_HARNESS_ABSENT = 'x' } { pwsh -NoProfile -Command '$env:ZZ_HARNESS_SET + "/" + $env:ZZ_HARNESS_ABSENT' } | Should -Be 'pendant/x'
+    }
+    It 'retire pendant le bloc une variable posée à $null' {
+        Invoke-WithEnv @{ ZZ_HARNESS_SET = $null } { Test-Path env:ZZ_HARNESS_SET } | Should -BeFalse
+    }
+    It 'remet l''environnement même si le bloc échoue' {
+        $before = @(Get-EnvState)
+        { Invoke-WithEnv @{ ZZ_HARNESS_ABSENT = 'x'; ZZ_HARNESS_EMPTY = 'y'; ZZ_HARNESS_SET = $null } { throw 'échec' } } | Should -Throw
+        @(Get-EnvState) | Should -Be $before
+    }
+    It 'git ne lit ni la config du poste ni celle du système' {
+        $env:GIT_CONFIG_NOSYSTEM | Should -Be '1'
+        git config --global --list 2>$null | Should -BeNullOrEmpty
+        git var GIT_COMMITTER_IDENT | Should -Match '^harness-test <harness-test@example\.invalid>'
+    }
+}
+
 Describe 'robustesse' {
     It 'refuse par sécurité une entrée illisible' { (Invoke-Hook -Raw '{pas du json').Decision | Should -Be 'deny' }
     It 'permet de couper une règle (HARNESS_DISABLED_HOOKS)' {
@@ -1236,22 +1303,25 @@ Describe 'doctor -Fix' {
         function Invoke-DoctorFix([string] $Project, [hashtable] $Env) {
             $fakeHome = Join-Path $script:Fake 'home'
             $vars = @{ PATH = (Join-Path $script:Fake 'bin') + [IO.Path]::PathSeparator + $env:PATH; HOME = $fakeHome; USERPROFILE = $fakeHome } + $Env
-            $saved = @{}
-            foreach ($k in $vars.Keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k); [Environment]::SetEnvironmentVariable($k, $vars[$k]) }
             Remove-Item $script:Calls -ErrorAction SilentlyContinue
-            try { pwsh -NoProfile -NonInteractive -File (Join-Path $Project '.harness' 'tools' 'doctor.ps1') -Fix -Offline *>&1 | Out-String }
-            finally { foreach ($k in $saved.Keys) { [Environment]::SetEnvironmentVariable($k, $saved[$k]) } }
+            Invoke-WithEnv $vars { pwsh -NoProfile -NonInteractive -File (Join-Path $Project '.harness' 'tools' 'doctor.ps1') -Fix -Offline *>&1 | Out-String }
         }
         function Get-Calls { if (Test-Path $script:Calls) { Get-Content $script:Calls } else { @() } }
 
         $script:Copy = New-ProjectCopy
         $script:Manifest = Join-Path $script:Copy '.harness' 'manifest.json'
         $script:ManifestBefore = Get-FileHash $script:Manifest
+        $script:EnvBefore = foreach ($k in 'HOME', 'USERPROFILE') { "$k=$(Test-Path "env:$k")=$([Environment]::GetEnvironmentVariable($k))" }
         $script:Output = Invoke-DoctorFix $script:Copy @{ HARNESS_SKIP_PLUGINS = '1' }
+        $script:EnvAfter = foreach ($k in 'HOME', 'USERPROFILE') { "$k=$(Test-Path "env:$k")=$([Environment]::GetEnvironmentVariable($k))" }
         $script:SkipCalls = @(Get-Calls)
     }
     AfterAll { Remove-Item $script:Fake -Recurse -Force -ErrorAction SilentlyContinue }
 
+    It 'remet HOME et USERPROFILE comme avant : une variable absente ne reste pas vide' {
+        # Une variable vide n'est pas absente : avec HOME vide, git ne trouve plus ~/.gitconfig.
+        $script:EnvAfter | Should -Be $script:EnvBefore
+    }
     It 'répare le bloc de .gitignore' {
         Get-Content (Join-Path $script:Copy '.gitignore') -Raw | Should -Match '# >>> harness'
     }
@@ -1317,11 +1387,16 @@ exit [int] $code
             if (Test-Path $Log) { Remove-Item $Log }
             # Le faux wsl connaît les distributions Ubuntu et Debian (wsl -l -q).
             $Env = @{ Path = "$dir;$PSHOME;$GitDir"; FAKE_LOG = $Log; FAKE_WSL_L_OUT = "Ubuntu`nDebian" } + $Env
-            $saved = @{}
-            foreach ($k in $Env.Keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k); [Environment]::SetEnvironmentVariable($k, $Env[$k]) }
-            try { $out = & (Join-Path $PSHOME 'pwsh') -NoProfile -NonInteractive -File $Lint @LintArgs 2>&1 | Out-String; $code = $LASTEXITCODE }
-            finally { foreach ($k in $saved.Keys) { [Environment]::SetEnvironmentVariable($k, $saved[$k]) } }
-            [pscustomobject]@{ Code = $code; Output = $out; Calls = @(if (Test-Path $Log) { Get-Content $Log }) }
+            Invoke-WithEnv $Env {
+                $out = & (Join-Path $PSHOME 'pwsh') -NoProfile -NonInteractive -File $Lint @LintArgs 2>&1 | Out-String
+                [pscustomobject]@{ Code = $LASTEXITCODE; Output = $out; Calls = @(if (Test-Path $Log) { Get-Content $Log }) }
+            }
+        }
+        # Commit de préparation : un échec arrête le test au lieu de fausser ce qu'il vérifie.
+        function Save-Repo([string] $Message) {
+            $out = git -C $Repo add -A 2>&1
+            if ($LASTEXITCODE -eq 0) { $out = git -C $Repo commit -q --no-verify --allow-empty -m $Message 2>&1 }
+            if ($LASTEXITCODE -ne 0) { throw "commit de préparation refusé : $($out | Out-String)" }
         }
         function Set-File([string] $Rel, [string] $Text = 'x: 1') {
             $file = Join-Path $Repo $Rel
@@ -1334,7 +1409,7 @@ exit [int] $code
     BeforeEach {
         # Chaque test part d'un dépôt sans fichier d'infra modifié.
         foreach ($d in 'tofu', 'clusters', 'ansible', 'charts', 'secrets', 'docs') { $p = Join-Path $Repo $d; if (Test-Path $p) { Remove-Item $p -Recurse -Force } }
-        git -C $Repo add -A 2>$null; git -C $Repo commit -q -m reset --no-verify --allow-empty 2>$null
+        Save-Repo reset
     }
 
     It 'stop-checks lance le lint d''infra déclaré par le module' {
@@ -1465,7 +1540,7 @@ exit [int] $code
     }
     It 'un fichier supprimé n''est pas lu' {
         Set-File 'clusters/home/cm.yaml'
-        git -C $Repo add -A; git -C $Repo commit -q -m cm --no-verify 2>$null
+        Save-Repo cm
         Remove-Item (Join-Path $Repo 'clusters/home/cm.yaml')
         $r = Invoke-Lint @('yamllint') -Tools 'yamllint'
         $r.Code | Should -Be 0
@@ -1474,7 +1549,7 @@ exit [int] $code
     It 'un fichier renommé est lu sous son nouveau nom' {
         # Un ancien nom court : lu comme une entrée de plus, il ferait échouer le lint.
         Set-File 'ab' 'a: 1'
-        git -C $Repo add -A; git -C $Repo commit -q -m old --no-verify 2>$null
+        Save-Repo old
         New-Item -ItemType Directory -Force (Join-Path $Repo 'clusters/home') | Out-Null
         git -C $Repo mv ab clusters/home/new.yaml
         try {
@@ -1482,7 +1557,7 @@ exit [int] $code
             $r.Code | Should -Be 0
             $r.Calls[0] | Should -Match 'clusters/home/new\.yaml$'
         }
-        finally { git -C $Repo rm -q -f --cached clusters/home/new.yaml 2>$null; git -C $Repo commit -q -m rm --no-verify 2>$null }
+        finally { Save-Repo rm }
     }
     It 'ne lit jamais les fichiers protégés du harness ni les fichiers de secrets, même sans yamllint' {
         # Le vrai fichier de réponses de Copier : sa liste non indentée est refusée par yamllint.
@@ -1519,7 +1594,7 @@ exit [int] $code
     It 'un .tf supprimé fait valider son dossier' {
         Set-File 'tofu/dns/main.tf' 'terraform {}'
         Set-File 'tofu/dns/variables.tf' 'variable "zone" {}'
-        git -C $Repo add -A; git -C $Repo commit -q -m tf --no-verify 2>$null
+        Save-Repo tf
         Remove-Item (Join-Path $Repo 'tofu/dns/variables.tf')
         $r = Invoke-Lint @('tofu') -Tools 'tofu', 'tflint'
         @($r.Calls | Where-Object { $_ -match '^tofu validate' }).Count | Should -Be 1
@@ -1529,7 +1604,7 @@ exit [int] $code
     }
     It 'un dossier tofu renommé est contrôlé sous son nouveau nom' {
         Set-File 'tofu/old/main.tf' 'terraform {}'
-        git -C $Repo add -A; git -C $Repo commit -q -m tf --no-verify 2>$null
+        Save-Repo tf
         git -C $Repo mv tofu/old tofu/new
         $r = Invoke-Lint @('tofu') -Tools 'tofu', 'tflint'
         $r.Code | Should -Be 0
@@ -1538,7 +1613,7 @@ exit [int] $code
     It 'tofu fmt ne lit que les .tf modifiés, jamais un *.tfvars' {
         Set-File 'tofu/dns/main.tf' 'terraform {}'
         Set-File 'tofu/dns/other.tf' 'terraform {}'
-        git -C $Repo add -A; git -C $Repo commit -q -m tf --no-verify 2>$null
+        Save-Repo tf
         Add-Content (Join-Path $Repo 'tofu/dns/main.tf') '# x'
         Set-File 'tofu/dns/terraform.tfvars' 'zone = "x"'
         $fmt = @((Invoke-Lint @('tofu') -Tools 'tofu', 'tflint').Calls | Where-Object { $_ -match '^tofu fmt' })
@@ -1583,4 +1658,9 @@ exit [int] $code
         $r.Output | Should -Not -Match 'uv tool install ansible-lint'
         $r.Calls | Should -Not -Match 'ansible-lint --nocolor'
     }
+}
+
+AfterAll {
+    Restore-Env $script:GitEnvBefore
+    Remove-Item $script:GitConfig -ErrorAction SilentlyContinue
 }

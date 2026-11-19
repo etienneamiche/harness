@@ -75,8 +75,12 @@ foreach ($name in $Scenario) {
 
     # Un projet tout juste généré doit se commiter : le hook pre-commit (gitleaks) ne doit
     # rien trouver dans les fichiers du harness eux-mêmes.
-    git -C $dest add -A
-    git -C $dest commit -q -m 'chore: harness (#0)' 2>&1 | Out-Host
+    # La config git du poste est écartée (fins de ligne, signature, identité) : seul compte le
+    # hook pre-commit du projet, que ce commit doit passer.
+    $git = '-C', $dest, '-c', 'core.autocrlf=false', '-c', 'core.safecrlf=false', '-c', 'commit.gpgsign=false',
+        '-c', 'user.name=harness-test', '-c', 'user.email=harness-test@example.invalid'
+    git @git add -A
+    git @git commit -q -m 'chore: harness (#0)' 2>&1 | Out-Host
     if ($LASTEXITCODE -ne 0) { Write-Host 'le premier commit du projet généré est refusé' -ForegroundColor Red; $failed++ }
     else { Write-Host 'premier commit : OK (pre-commit passé)' }
 }
