@@ -8,7 +8,7 @@ argument-hint: "[question]"
 
 L'infra du homelab est décrite dans `homelab/docs/`, un dépôt privé. `/homelab` y trouve la réponse, la cite, et dit si elle est encore sûre. Une doc d'infra vieillit : une décision datée en remplace une autre, un « prévu » devient « fait » sans que tous les fichiers suivent. La réponse vaut ce que vaut sa source, et le skill la montre toujours.
 
-**Lecture seule, docs seulement.** Le skill ne lance aucune commande vers l'infra : ni `ssh`, ni `ping`, ni `kubectl`, `argocd`, `tofu`, `ansible`, `curl` sur un hôte du homelab. La lecture de l'état réel arrive avec les wrappers du module `infra`. Il ne modifie aucun fichier de `homelab` : une correction de la doc passe par une PR de ce dépôt.
+**Lecture seule, docs seulement.** Le skill ne lance aucune commande vers l'infra : ni `ssh`, ni `ping`, ni `kubectl`, `argocd`, `tofu`, `ansible`, `curl` sur un hôte du homelab. Pour l'état réel, il donne la commande à lancer soi-même (section 3). Une lecture par le skill attend la phase 11 de la roadmap de `services`, qui choisit entre une règle de lecture seule à la racine et une lecture lancée depuis `homelab`, où `infra-guard` garde les actions. Il ne modifie aucun fichier de `homelab` : une correction de la doc passe par une PR de ce dépôt.
 
 **Confidentialité.** `homelab` est privé, et ce qui en sort ne doit pas fuiter. Le skill peut citer une adresse, un nom d'hôte ou le domaine **dans la session**. Il ne les écrit jamais ailleurs : ni dans un fichier de `services` ou d'un autre dépôt public, ni dans une issue ou une PR de `harness` ou de `services`, ni dans la page d'état. Il ne lit jamais un secret : ni `*.sops.yaml` déchiffré, ni `*.tfstate`, `*.tfvars`, kubeconfig, ni clé.
 
