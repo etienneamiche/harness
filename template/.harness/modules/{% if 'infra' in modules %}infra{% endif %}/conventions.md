@@ -35,6 +35,17 @@ docs/                       la doc
 - **Le cluster est toujours nommé, en clair** : `kubectl --context <cluster>`, `helm --kube-context <cluster>`, jamais le contexte courant, ni par défaut ni par `$(kubectl config current-context)`. Une commande sans contexte peut viser le mauvais cluster : `infra-guard` refuse une action qui n'en nomme pas.
 - **Git décrit l'état durable.** Un `kubectl apply` à la main sert à dépanner, et il est suivi d'un commit qui rend le même état à Git, sinon ArgoCD le défait.
 
+## Lint en fin de tour
+
+`stop-checks` lance `.harness/modules/infra/lint.ps1` sur les fichiers modifiés, et bloque la fin du tour tant qu'une erreur reste :
+
+- `tofu/` : `tofu fmt -check` sur les `.tf` modifiés, puis `tofu validate` et `tflint` dans chaque dossier où un `.tf` a été modifié, ajouté, supprimé ou renommé. `validate` a besoin d'un `tofu init` fait une fois dans le dossier ; le lint ne le lance pas, il dit de le faire. Une sortie qui cite un `*.tfvars` est masquée, car elle peut en contenir une ligne : l'utilisateur corrige le fichier et relance la commande lui-même ;
+- `clusters/` : `kubeconform -strict` sur les manifestes (les fichiers qui ont une clé `kind:`), avec les schémas des CRD du catalogue datree. Un schéma introuvable est ignoré ;
+- tout le YAML : `yamllint`, avec la config `.yamllint` du dépôt, ou à défaut une config compatible avec ansible-lint ;
+- `ansible/` : `ansible-lint --offline`, dans WSL (distribution `HARNESS_WSL_DISTRO`, `Ubuntu` par défaut). Des collections ou des rôles absents : il dit de lancer `ansible-galaxy install -r ansible/requirements.yml` dans WSL, ce qui demande l'accord de l'utilisateur (`infra-guard`).
+
+Aucun outil ne lit les fichiers protégés du harness, les fichiers de secrets (`protectedPaths` et `secretPaths` de `harness.json`), les `*.sops.yaml` ni les dossiers `templates/`. Un outil absent fait échouer le lint dès qu'il a un fichier à lire, avec la façon de l'installer (`scripts/setup-workstation.ps1 -Role admin` à la racine `services`). Le doctor signale les outils absents.
+
 ## OpenTofu
 
 - **Plan enregistré, puis apply de ce plan** : `tofu plan -out=<périmètre>.tfplan`, relu, puis `tofu apply <périmètre>.tfplan`. Jamais d'`apply` sans plan, ni d'`-auto-approve` sur un plan que l'utilisateur n'a pas vu.

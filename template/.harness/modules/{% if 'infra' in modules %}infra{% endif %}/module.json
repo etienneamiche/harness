@@ -1,6 +1,27 @@
 {
   "name": "infra",
   "description": "Infrastructure : OpenTofu, Ansible, manifestes Kubernetes en GitOps, secrets SOPS + age",
-  "stopChecks": [],
+  "stopChecks": [
+    {
+      "name": "tofu",
+      "files": "^tofu/.*\\.(tf|tofu)$",
+      "command": "& ./.harness/modules/infra/lint.ps1 tofu"
+    },
+    {
+      "name": "kubeconform",
+      "files": "^clusters/.*\\.ya?ml$",
+      "command": "& ./.harness/modules/infra/lint.ps1 kubeconform"
+    },
+    {
+      "name": "yamllint",
+      "files": "\\.ya?ml$",
+      "command": "& ./.harness/modules/infra/lint.ps1 yamllint"
+    },
+    {
+      "name": "ansible-lint",
+      "files": "^ansible/.*\\.ya?ml$",
+      "command": "& ./.harness/modules/infra/lint.ps1 ansible-lint"
+    }
+  ],
   "structural": []
 }
