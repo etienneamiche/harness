@@ -4,6 +4,10 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versions : [s
 
 ## [Non publié]
 
+## [0.4.0] - 2026-11-20
+
+Le module `infra`, préalable de H1 dans la piste homelab de la roadmap.
+
 ### Ajouté
 - **Module `infra`**, réservé au type `infra` (refusé ailleurs par Copier). Ses conventions couvrent le rangement du dépôt, l'accord explicite de l'utilisateur avant toute action qui modifie l'infra, le contexte de cluster toujours nommé, le plan OpenTofu enregistré avant l'apply, les versions figées, Ansible dans WSL Ubuntu, les manifestes en GitOps et les secrets SOPS + age. Elles précisent qu'un fichier de secrets est chiffré en entier, sauf les manifestes `Secret` de Kubernetes, et que la lecture des secrets n'est jamais libre (`kubectl get secret -o yaml`, `tofu output`, `tofu state pull`, `helm get values`, `--diff` d'Ansible sans `no_log` ni `diff: false`). Avec ce module, `doc-sprawl` accepte les notes d'une machine, `hosts/<hôte>/<fichier>.md` (#5). Un autotest vérifie que les conventions de chaque module installé sont importées par `core.md`. `tools/test.ps1` génère un projet `infra` et refuse `infra` dans une app.
 - **Secrets d'infra**, dans tous les projets (la racine clone aussi le dépôt d'infra) (#6) :
@@ -19,13 +23,13 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versions : [s
 - **Lint d'infra en fin de tour** (module `infra`, #73) : `stop-checks` lance `.harness/modules/infra/lint.ps1` sur les fichiers modifiés. `tofu fmt -check` lit les `.tf` modifiés, `tofu validate` et `tflint` tournent dans chaque dossier de `tofu/` où un `.tf` a été modifié, ajouté, supprimé ou renommé. `kubeconform -strict` lit les manifestes de `clusters/` (schémas des CRD du catalogue datree), `yamllint` le YAML (config du dépôt, sinon une config compatible avec ansible-lint), `ansible-lint --offline` le YAML d'`ansible/` dans WSL (`HARNESS_WSL_DISTRO`, `Ubuntu` par défaut). Les fichiers de `protectedPaths` et `secretPaths`, les `*.sops.yaml` et les dossiers `templates/` sont écartés : une mise à jour du harness, qui réécrit `.copier-answers.harness.yml`, ne bloque pas la fin du tour. Une sortie d'OpenTofu ou de tflint qui cite un `*.tfvars` est masquée. Un outil absent fait échouer le lint dès qu'il a un fichier à lire, avec la façon de l'installer, et une distribution WSL absente est nommée comme telle. `tofu validate` sans `tofu init`, et `ansible-lint` sans les collections de `ansible/requirements.yml`, disent quoi lancer, sans le lancer. Le doctor signale les outils absents (`lint infra`).
 - **Bloc `.gitignore` du harness** : `*.tfstate`, `*.tfstate.*`, `*.tfplan`, `*.tfvars`, `*.tfvars.json` et `.terraform/` y sont ignorés, dans tous les projets.
 
-### Corrigé
-- **`/homelab`** : il ne promet plus une lecture de l'état réel par des wrappers du module `infra`, qui n'existent pas. Il donne la commande à lancer soi-même ; une lecture par le skill attend la phase 11 de la roadmap de `services` (#80).
-- **Règles des modules** : le dispatcher ne les chargeait jamais. `Get-ChildItem` sur `.harness/modules/*/rules/<Événement>` avec `-Filter` rendait le dossier lui-même, pas ses fichiers. Aucun module n'avait encore de règle ; `infra-guard` est la première (#72).
-
 ### Modifié
 - **ponytail** : `settings.json` impose le mode `full` (`PONYTAIL_DEFAULT_MODE`), qu'une config personnelle ne coupe plus. Ses règles ne vont qu'aux subagents qui conçoivent, écrivent ou relisent du code : `dev`, `reviewer`, `auditor`, `architect` et `db-ops` (`PONYTAIL_SUBAGENT_MATCHER`). `git-ops`, `explorer` et `cartographer` ne les reçoivent plus, ni `linter`, dont les corrections sont mécaniques.
 - **Revues** : `reviewer`, `/review` et le guide d'`auditor` signalent la sur-ingénierie. Pour `auditor`, c'est un constat mineur, ou important pour une dépendance ajoutée sans besoin ou une couche que les conventions n'appellent pas.
+
+### Corrigé
+- **`/homelab`** : il ne promet plus une lecture de l'état réel par des wrappers du module `infra`, qui n'existent pas. Il donne la commande à lancer soi-même ; une lecture par le skill attend la phase 11 de la roadmap de `services` (#80).
+- **Règles des modules** : le dispatcher ne les chargeait jamais. `Get-ChildItem` sur `.harness/modules/*/rules/<Événement>` avec `-Filter` rendait le dossier lui-même, pas ses fichiers. Aucun module n'avait encore de règle ; `infra-guard` est la première (#72).
 
 ## [0.3.0] - 2026-11-11
 
